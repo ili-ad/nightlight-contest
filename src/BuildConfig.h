@@ -37,6 +37,11 @@ namespace BuildConfig {
   constexpr uint32_t kInterludeMaxMs = 400;
   constexpr uint32_t kStateTickMs = 16;  // ~60fps target cadence
 
+  // Presence gating placeholders for initial behavior hysteresis and decay timing.
+  constexpr float kPresenceEnterThreshold = 0.20f;
+  constexpr float kPresenceExitThreshold = 0.08f;
+  constexpr uint32_t kDecayMs = 1200;
+
   // Safe brightness caps. These are just placeholders for now.
   constexpr float kGlobalBrightnessLimit = 0.20f;
   constexpr float kIdleBrightness = 0.03f;
