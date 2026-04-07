@@ -1,11 +1,12 @@
 #pragma once
 
 #include "BehaviorContext.h"
+#include "../sensors/PresenceTypes.h"
 
 class LampStateMachine {
 public:
   void begin();
-  void update();
+  void update(bool darkAllowed, float ambientLux, const CorePresence& presence);
   const BehaviorContext& context() const;
 
 private:
