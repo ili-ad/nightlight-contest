@@ -28,16 +28,6 @@ namespace {
     CorePresence presence;
   };
 
-  uint8_t toLevel(float normalized) {
-    if (normalized <= 0.0f) {
-      return 0;
-    }
-    if (normalized >= 1.0f) {
-      return 255;
-    }
-    return static_cast<uint8_t>(normalized * 255.0f);
-  }
-
   AppInputs readInputs() {
     AppInputs inputs;
 
@@ -81,7 +71,7 @@ namespace {
       case LampState::Decay:
       case LampState::FaultSafe:
       default:
-        gRendererRgb.renderIdle(gPixelBus, toLevel(intent.whiteLevel));
+        gRendererRgb.renderIntent(gPixelBus, intent);
         break;
     }
   }
@@ -106,7 +96,7 @@ namespace {
       case LampState::Decay:
       case LampState::FaultSafe:
       default:
-        gRendererRgbw.renderIdle(gPixelBus, toLevel(intent.whiteLevel));
+        gRendererRgbw.renderIntent(gPixelBus, intent);
         break;
     }
   }
