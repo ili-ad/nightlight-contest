@@ -75,6 +75,12 @@ namespace BuildConfig {
   constexpr float kDecayEndSaturation = 0.07f;
   constexpr float kDecayEndRgbLevel = 0.02f;
 
+  // Sensor-specific mapper refinements (MAP-005).
+  constexpr float kLd2410MotionEnergySaturationBoost = 0.10f;
+  constexpr float kLd2410StaticEnergyWhiteBoost = 0.06f;
+  constexpr float kC4001SpeedAnimationBoost = 0.20f;
+  constexpr float kC4001TargetEnergyRgbBoost = 0.10f;
+
   // Ambient-light placeholders. Real values come later.
   constexpr float kDarkEnterLux = 8.0f;
   constexpr float kDarkExitLux = 16.0f;
