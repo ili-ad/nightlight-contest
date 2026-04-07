@@ -85,7 +85,7 @@ RenderIntent MapperShared::mapNightIdle(const BehaviorContext& context) const {
   intent.hue = BuildConfig::kIdleHue;
   intent.saturation = BuildConfig::kIdleSaturation;
   intent.rgbLevel = BuildConfig::kIdleRgbLevel;
-  intent.animationRate = 0.02f;
+  intent.animationRate = BuildConfig::kIdleAnimationRate;
   intent.phase = normalizedPhase(context.elapsedInStateMs(), intent.animationRate);
   intent.emphasizedSegment = SegmentId::Ring;
   return intent;
@@ -98,7 +98,8 @@ RenderIntent MapperShared::mapActiveInterpretive(const BehaviorContext& context)
   const float nearness = clamp01(context.distanceHint);
   const float motion = clamp01(context.motionHint);
 
-  const float strength = clamp01((0.65f * confidence) + (0.35f * nearness));
+  const float strength = clamp01((BuildConfig::kActiveConfidenceWeight * confidence) +
+                                 (BuildConfig::kActiveNearnessWeight * nearness));
   const float baseWhite = lerp(BuildConfig::kActiveBrightnessMin, BuildConfig::kActiveBrightnessMax, strength);
 
   const float stillness = 1.0f - motion;
@@ -106,15 +107,19 @@ RenderIntent MapperShared::mapActiveInterpretive(const BehaviorContext& context)
 
   intent.whiteLevel = context.darkAllowed ? baseWhite : 0.0f;
   intent.hue = lerp(BuildConfig::kActiveFarHue, BuildConfig::kActiveNearHue, nearness);
-  intent.hue = lerp(intent.hue, BuildConfig::kActiveNearHue, stillCloseSoftness * 0.35f);
+  intent.hue = lerp(intent.hue, BuildConfig::kActiveNearHue,
+                    stillCloseSoftness * BuildConfig::kStillCloseHueBiasStrength);
 
   intent.saturation = BuildConfig::kActiveBaseSaturation + (motion * BuildConfig::kActiveMotionSaturationBoost);
-  intent.saturation = clamp01(intent.saturation - (stillCloseSoftness * 0.10f));
+  intent.saturation =
+      clamp01(intent.saturation - (stillCloseSoftness * BuildConfig::kStillCloseSaturationSoftening));
 
   intent.rgbLevel = BuildConfig::kActiveBaseRgbLevel + (motion * BuildConfig::kActiveMotionRgbBoost);
-  intent.rgbLevel = clamp01(intent.rgbLevel - (stillCloseSoftness * 0.04f));
+  intent.rgbLevel =
+      clamp01(intent.rgbLevel - (stillCloseSoftness * BuildConfig::kStillCloseRgbSoftening));
 
-  intent.animationRate = 0.08f + (motion * 0.92f);
+  intent.animationRate = BuildConfig::kActiveAnimationBaseRate +
+                         (motion * BuildConfig::kActiveAnimationMotionBoost);
   intent.phase = normalizedPhase(context.elapsedInStateMs(), intent.animationRate);
   intent.emphasizedSegment = SegmentId::WholeObject;
   return intent;
@@ -134,9 +139,11 @@ RenderIntent MapperShared::mapDecay(const BehaviorContext& context) const {
   intent.hue = lerp(start.hue, BuildConfig::kDecayEndHue, t);
   intent.saturation = lerp(start.saturation, BuildConfig::kDecayEndSaturation, t);
   intent.rgbLevel = lerp(start.rgbLevel, BuildConfig::kDecayEndRgbLevel, t);
-  intent.animationRate = lerp(start.animationRate, 0.01f, t);
+  intent.animationRate = lerp(start.animationRate, BuildConfig::kDecayAnimationFloor, t);
   intent.phase = normalizedPhase(context.elapsedInStateMs(), intent.animationRate);
-  intent.emphasizedSegment = (t < 0.5f) ? SegmentId::WholeObject : SegmentId::Ring;
+  intent.emphasizedSegment = (t < BuildConfig::kDecaySegmentReturnThreshold)
+                                 ? SegmentId::WholeObject
+                                 : SegmentId::Ring;
   return intent;
 }
 
