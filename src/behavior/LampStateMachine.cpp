@@ -34,6 +34,9 @@ void LampStateMachine::update(bool darkAllowed, float ambientLux, const CorePres
   mContext.presenceConfidence = presence.presenceConfidence;
   mContext.distanceHint = presence.distanceHint;
   mContext.motionHint = presence.motionHint;
+  mContext.hasAngle = presence.hasAngle;
+  mContext.angleNorm = presence.angleNorm;
+  mContext.lateralBias = presence.lateralBias;
 
   if (forceFaultSafe && mContext.state != LampState::FaultSafe) {
     transitionTo(mContext, LampState::FaultSafe, now);
