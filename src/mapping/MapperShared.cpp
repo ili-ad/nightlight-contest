@@ -26,7 +26,7 @@ namespace {
   }
 }
 
-RenderIntent MapperShared::map(const BehaviorContext& context) {
+RenderIntent MapperShared::map(const BehaviorContext& context) const {
   RenderIntent intent{};
   switch (context.state) {
     case LampState::DayDormant:
@@ -57,6 +57,14 @@ RenderIntent MapperShared::map(const BehaviorContext& context) {
 
   intent.effectId = static_cast<uint8_t>(context.state);
   return intent;
+}
+
+RenderIntent MapperShared::mapActiveBaseline(const BehaviorContext& context) const {
+  return mapActiveInterpretive(context);
+}
+
+RenderIntent MapperShared::mapDecayBaseline(const BehaviorContext& context) const {
+  return mapDecay(context);
 }
 
 RenderIntent MapperShared::mapDayDormant(const BehaviorContext&) const {

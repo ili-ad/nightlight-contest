@@ -5,7 +5,9 @@
 
 class MapperShared {
 public:
-  RenderIntent map(const BehaviorContext& context);
+  RenderIntent map(const BehaviorContext& context) const;
+  RenderIntent mapActiveBaseline(const BehaviorContext& context) const;
+  RenderIntent mapDecayBaseline(const BehaviorContext& context) const;
 
 private:
   RenderIntent mapDayDormant(const BehaviorContext& context) const;
