@@ -18,6 +18,10 @@ struct BehaviorContext {
   float presenceConfidence = 0.0f;
   float distanceHint = 0.0f;
   float motionHint = 0.0f;
+  // Placeholder directional semantics copied from CorePresence.
+  bool hasAngle = false;
+  float angleNorm = 0.0f;    // Suggested placeholder range 0..1.
+  float lateralBias = 0.0f;  // Suggested placeholder range -1..1.
 
   // Render / behavior bookkeeping
   uint8_t activeEffectId = 0;

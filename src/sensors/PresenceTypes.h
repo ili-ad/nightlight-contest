@@ -9,6 +9,15 @@ struct CorePresence {
   float presenceConfidence = 0.0f;  // 0..1
   float distanceHint = 0.0f;        // 0..1, interpretation deferred
   float motionHint = 0.0f;          // 0..1, interpretation deferred
+  // Placeholder directional semantics only (not a hardware contract):
+  // hasAngle: whether any directional/angular estimate is believed valid.
+  bool hasAngle = false;
+  // angleNorm: normalized unsigned off-centerline deviation (suggested 0..1).
+  // 0 = centered/head-on, 1 = strongly off-axis/oblique.
+  float angleNorm = 0.0f;
+  // lateralBias: normalized signed lateral bias (suggested -1..1).
+  // 0 = centered; negative/positive indicate opposite lateral sides.
+  float lateralBias = 0.0f;
 
   uint32_t timestampMs = 0;
 };
@@ -23,6 +32,11 @@ struct Ld2410PresenceRich {
   int movingDistanceGate = -1;
   int stationaryDistanceGate = -1;
 
+  // Placeholder directional semantics only (not yet driven by raw protocol).
+  bool hasAngle = false;
+  float angleNorm = 0.0f;    // Suggested placeholder range 0..1.
+  float lateralBias = 0.0f;  // Suggested placeholder range -1..1.
+
   // Optional future expansion: engineering mode gate arrays.
   // int movingGateEnergy[9];
   // int stationaryGateEnergy[9];
@@ -33,4 +47,9 @@ struct C4001PresenceRich {
   float targetRangeM = 0.0f;
   float targetSpeedMps = 0.0f;
   int targetEnergy = 0;
+
+  // Placeholder directional semantics only (not yet driven by raw protocol).
+  bool hasAngle = false;
+  float angleNorm = 0.0f;    // Suggested placeholder range 0..1.
+  float lateralBias = 0.0f;  // Suggested placeholder range -1..1.
 };
