@@ -26,7 +26,7 @@ DebugInputSample DebugModes::sample(uint32_t nowMs) {
 
   sample.useSimulated = true;
   sample.darkAllowed = true;
-  sample.ambientLux = 2.0f;
+  sample.ambientLux = BuildConfig::kSimDarkAmbientLux;
   sample.presence.online = true;
   sample.presence.present = false;
   sample.presence.presenceConfidence = 0.0f;
@@ -38,14 +38,15 @@ DebugInputSample DebugModes::sample(uint32_t nowMs) {
   const uint32_t loopMs = (BuildConfig::kSimLoopMs == 0) ? 1 : BuildConfig::kSimLoopMs;
   const uint32_t phaseMs = nowMs % loopMs;
 
-  if (phaseMs < 1200) {
+  if (phaseMs < BuildConfig::kSimDarkIdleMs) {
     // 1) Dark idle.
     return sample;
   }
 
-  if (phaseMs < 3200) {
+  if (phaseMs < BuildConfig::kSimApproachEndMs) {
     // 2) Approach ramp.
-    const float t = normalizedRamp(phaseMs - 1200, 2000);
+    const float t = normalizedRamp(phaseMs - BuildConfig::kSimDarkIdleMs,
+                                   BuildConfig::kSimApproachEndMs - BuildConfig::kSimDarkIdleMs);
     sample.presence.present = (t >= 0.25f);
     sample.presence.presenceConfidence = 0.05f + (0.90f * t);
     sample.presence.distanceHint = 0.10f + (0.85f * t);
@@ -53,7 +54,7 @@ DebugInputSample DebugModes::sample(uint32_t nowMs) {
     return sample;
   }
 
-  if (phaseMs < 4600) {
+  if (phaseMs < BuildConfig::kSimNearStillEndMs) {
     // 3) Near but mostly still.
     sample.presence.present = true;
     sample.presence.presenceConfidence = 0.95f;
@@ -62,9 +63,10 @@ DebugInputSample DebugModes::sample(uint32_t nowMs) {
     return sample;
   }
 
-  if (phaseMs < 6200) {
+  if (phaseMs < BuildConfig::kSimRetreatEndMs) {
     // 4) Retreat.
-    const float t = normalizedRamp(phaseMs - 4600, 1600);
+    const float t = normalizedRamp(phaseMs - BuildConfig::kSimNearStillEndMs,
+                                   BuildConfig::kSimRetreatEndMs - BuildConfig::kSimNearStillEndMs);
     sample.presence.present = (t < 0.70f);
     sample.presence.presenceConfidence = 0.95f * (1.0f - t);
     sample.presence.distanceHint = 0.95f * (1.0f - t);
@@ -72,21 +74,21 @@ DebugInputSample DebugModes::sample(uint32_t nowMs) {
     return sample;
   }
 
-  if (phaseMs < 7200) {
+  if (phaseMs < BuildConfig::kSimDarkAbsentEndMs) {
     // 5) Absent in dark.
     return sample;
   }
 
-  if (phaseMs < 8400) {
+  if (phaseMs < BuildConfig::kSimDayLockoutEndMs) {
     // 6) Day lockout.
     sample.darkAllowed = false;
-    sample.ambientLux = 80.0f;
+    sample.ambientLux = BuildConfig::kSimDayAmbientLux;
     return sample;
   }
 
   // 7) Explicit fault-safe pulse.
   sample.darkAllowed = false;
-  sample.ambientLux = 80.0f;
+  sample.ambientLux = BuildConfig::kSimDayAmbientLux;
   sample.forceFaultSafe = true;
   return sample;
 }
