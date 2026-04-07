@@ -1,5 +1,7 @@
 #include "App.h"
+#include <Arduino.h>
 #include "BuildConfig.h"
+#include "debug/DebugModes.h"
 #include "behavior/LampStateMachine.h"
 #include "debug/Telemetry.h"
 #include "effects/BootEffects.h"
@@ -26,6 +28,7 @@ namespace {
     bool darkAllowed = false;
     float ambientLux = 0.0f;
     CorePresence presence;
+    bool forceFaultSafe = false;
   };
 
   AppInputs readInputs() {
@@ -40,11 +43,19 @@ namespace {
     inputs.darkAllowed = (inputs.ambientLux < BuildConfig::kDarkEnterLux);
     inputs.presence = gPresenceManager.readCore();
 
+    const DebugInputSample sim = DebugModes::sample(millis());
+    if (sim.useSimulated) {
+      inputs.darkAllowed = sim.darkAllowed;
+      inputs.ambientLux = sim.ambientLux;
+      inputs.presence = sim.presence;
+      inputs.forceFaultSafe = sim.forceFaultSafe;
+    }
+
     return inputs;
   }
 
   void advanceState(const AppInputs& inputs) {
-    gStateMachine.update(inputs.darkAllowed, inputs.ambientLux, inputs.presence);
+    gStateMachine.update(inputs.darkAllowed, inputs.ambientLux, inputs.presence, inputs.forceFaultSafe);
   }
 
   RenderIntent buildRenderIntent(const BehaviorContext& context) {

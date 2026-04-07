@@ -12,10 +12,20 @@ enum class RenderBackend : uint8_t {
   RGBW
 };
 
+enum class DebugInputMode : uint8_t {
+  None,
+  SimulatedApproachLoop
+};
+
 namespace BuildConfig {
   // Active hardware choices for this build.
   constexpr PresenceBackend kPresenceBackend = PresenceBackend::None;
   constexpr RenderBackend kRenderBackend = RenderBackend::RGBW;
+
+  // Debug input mode. Set this to None when live sensor bring-up begins.
+  constexpr DebugInputMode kDebugInputMode = DebugInputMode::SimulatedApproachLoop;
+  constexpr uint32_t kSimLoopMs = 9000;
+  constexpr uint32_t kFaultSafeHoldMs = 600;
 
   // Provisional physical model.
   constexpr float kRingDiameterMm = 100.0f;
