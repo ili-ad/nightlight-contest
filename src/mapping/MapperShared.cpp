@@ -1,4 +1,6 @@
 #include "MapperShared.h"
+#include "../BuildConfig.h"
+#include <math.h>
 
 namespace {
   float clamp01(float value) {
@@ -11,60 +13,41 @@ namespace {
     return value;
   }
 
-  float activeWhiteLevel(const BehaviorContext& context) {
-    const float confidence = clamp01(context.presenceConfidence);
-    const float motion = clamp01(context.motionHint);
-    return 0.10f + (confidence * 0.15f) + (motion * 0.10f);
+  float lerp(float a, float b, float t) {
+    return a + ((b - a) * clamp01(t));
+  }
+
+  float normalizedPhase(uint32_t elapsedMs, float animationRate) {
+    if (animationRate <= 0.0f) {
+      return 0.0f;
+    }
+    const float cycles = (static_cast<float>(elapsedMs) / 1000.0f) * animationRate;
+    return cycles - floorf(cycles);
   }
 }
 
 RenderIntent MapperShared::map(const BehaviorContext& context) {
-  RenderIntent intent;
-  intent.effectId = static_cast<uint8_t>(context.state);
-
+  RenderIntent intent{};
   switch (context.state) {
     case LampState::DayDormant:
-    case LampState::FaultSafe:
-      intent.whiteLevel = 0.0f;
-      intent.rgbLevel = 0.0f;
-      intent.saturation = 0.0f;
-      intent.animationRate = 0.0f;
+      intent = mapDayDormant(context);
       break;
 
     case LampState::NightIdle:
-      intent.whiteLevel = context.darkAllowed ? 0.08f : 0.0f;
-      intent.rgbLevel = 0.02f;
-      intent.saturation = 0.05f;
-      intent.hue = 0.10f;
-      intent.animationRate = 0.02f;
+      intent = mapNightIdle(context);
       break;
 
-    case LampState::ActiveInterpretive: {
-      const float confidence = clamp01(context.presenceConfidence);
-      const float distance = clamp01(context.distanceHint);
-      const float motion = clamp01(context.motionHint);
-
-      intent.whiteLevel = context.darkAllowed ? activeWhiteLevel(context) : 0.0f;
-      intent.hue = 0.58f - (distance * 0.20f);
-      intent.saturation = 0.20f + (motion * 0.50f);
-      intent.rgbLevel = 0.08f + (confidence * 0.28f);
-      intent.animationRate = 0.10f + (motion * 0.80f);
-      intent.phase = distance;
+    case LampState::ActiveInterpretive:
+      intent = mapActiveInterpretive(context);
       break;
-    }
 
-    case LampState::Decay: {
-      const float confidence = clamp01(context.presenceConfidence);
-      const float motion = clamp01(context.motionHint);
-
-      intent.whiteLevel = context.darkAllowed ? (0.05f + (confidence * 0.08f)) : 0.0f;
-      intent.hue = 0.12f;
-      intent.saturation = 0.12f + (motion * 0.10f);
-      intent.rgbLevel = 0.03f + (confidence * 0.10f);
-      intent.animationRate = 0.06f;
-      intent.phase = 0.0f;
+    case LampState::Decay:
+      intent = mapDecay(context);
       break;
-    }
+
+    case LampState::FaultSafe:
+      intent = mapFaultSafe(context);
+      break;
 
     case LampState::BootAnimation:
     case LampState::InterludeGlitch:
@@ -72,5 +55,88 @@ RenderIntent MapperShared::map(const BehaviorContext& context) {
       break;
   }
 
+  intent.effectId = static_cast<uint8_t>(context.state);
+  return intent;
+}
+
+RenderIntent MapperShared::mapDayDormant(const BehaviorContext&) const {
+  RenderIntent intent{};
+  intent.whiteLevel = 0.0f;
+  intent.hue = BuildConfig::kIdleHue;
+  intent.saturation = 0.0f;
+  intent.rgbLevel = 0.0f;
+  intent.animationRate = 0.0f;
+  intent.phase = 0.0f;
+  intent.emphasizedSegment = SegmentId::Ring;
+  return intent;
+}
+
+RenderIntent MapperShared::mapNightIdle(const BehaviorContext& context) const {
+  RenderIntent intent{};
+  intent.whiteLevel = context.darkAllowed ? BuildConfig::kIdleBrightness : 0.0f;
+  intent.hue = BuildConfig::kIdleHue;
+  intent.saturation = BuildConfig::kIdleSaturation;
+  intent.rgbLevel = BuildConfig::kIdleRgbLevel;
+  intent.animationRate = 0.02f;
+  intent.phase = normalizedPhase(context.elapsedInStateMs(), intent.animationRate);
+  intent.emphasizedSegment = SegmentId::Ring;
+  return intent;
+}
+
+RenderIntent MapperShared::mapActiveInterpretive(const BehaviorContext& context) const {
+  RenderIntent intent{};
+  const float confidence = clamp01(context.presenceConfidence);
+  const float distance = clamp01(context.distanceHint);
+  const float motion = clamp01(context.motionHint);
+  const float proximity = 1.0f - distance;
+
+  const float strength = clamp01((0.65f * confidence) + (0.35f * proximity));
+  const float baseWhite = lerp(BuildConfig::kActiveBrightnessMin, BuildConfig::kActiveBrightnessMax, strength);
+
+  const float stillness = 1.0f - motion;
+  const float stillCloseSoftness = clamp01(proximity * stillness);
+
+  intent.whiteLevel = context.darkAllowed ? baseWhite : 0.0f;
+  intent.hue = lerp(BuildConfig::kActiveFarHue, BuildConfig::kActiveNearHue, proximity);
+  intent.hue = lerp(intent.hue, BuildConfig::kActiveNearHue, stillCloseSoftness * 0.35f);
+
+  intent.saturation = BuildConfig::kActiveBaseSaturation + (motion * BuildConfig::kActiveMotionSaturationBoost);
+  intent.saturation = clamp01(intent.saturation - (stillCloseSoftness * 0.10f));
+
+  intent.rgbLevel = BuildConfig::kActiveBaseRgbLevel + (motion * BuildConfig::kActiveMotionRgbBoost);
+  intent.rgbLevel = clamp01(intent.rgbLevel - (stillCloseSoftness * 0.04f));
+
+  intent.animationRate = 0.08f + (motion * 0.92f);
+  intent.phase = normalizedPhase(context.elapsedInStateMs(), intent.animationRate);
+  intent.emphasizedSegment = SegmentId::WholeObject;
+  return intent;
+}
+
+RenderIntent MapperShared::mapDecay(const BehaviorContext& context) const {
+  const RenderIntent start = mapActiveInterpretive(context);
+  RenderIntent intent = start;
+
+  const float t = clamp01(static_cast<float>(context.elapsedInStateMs()) /
+                          static_cast<float>(BuildConfig::kDecayMs));
+
+  intent.whiteLevel = context.darkAllowed ? lerp(start.whiteLevel, BuildConfig::kIdleBrightness, t) : 0.0f;
+  intent.hue = lerp(start.hue, BuildConfig::kDecayEndHue, t);
+  intent.saturation = lerp(start.saturation, BuildConfig::kDecayEndSaturation, t);
+  intent.rgbLevel = lerp(start.rgbLevel, BuildConfig::kDecayEndRgbLevel, t);
+  intent.animationRate = lerp(start.animationRate, 0.01f, t);
+  intent.phase = normalizedPhase(context.elapsedInStateMs(), intent.animationRate);
+  intent.emphasizedSegment = (t < 0.5f) ? SegmentId::WholeObject : SegmentId::Ring;
+  return intent;
+}
+
+RenderIntent MapperShared::mapFaultSafe(const BehaviorContext&) const {
+  RenderIntent intent{};
+  intent.whiteLevel = BuildConfig::kFaultSafeWhiteLevel;
+  intent.hue = BuildConfig::kFaultSafeHue;
+  intent.saturation = BuildConfig::kFaultSafeSaturation;
+  intent.rgbLevel = 0.0f;
+  intent.animationRate = 0.0f;
+  intent.phase = 0.0f;
+  intent.emphasizedSegment = SegmentId::WholeObject;
   return intent;
 }

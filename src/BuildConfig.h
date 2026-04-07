@@ -58,6 +58,23 @@ namespace BuildConfig {
   constexpr float kActiveBrightnessMin = 0.05f;
   constexpr float kActiveBrightnessMax = 0.18f;
 
+  // Shared mapper profile tuning (MAP-004).
+  constexpr float kIdleHue = 0.09f;
+  constexpr float kIdleSaturation = 0.08f;
+  constexpr float kIdleRgbLevel = 0.02f;
+  constexpr float kFaultSafeWhiteLevel = 0.02f;
+  constexpr float kFaultSafeHue = 0.56f;
+  constexpr float kFaultSafeSaturation = 0.01f;
+  constexpr float kActiveFarHue = 0.58f;
+  constexpr float kActiveNearHue = 0.10f;
+  constexpr float kActiveBaseRgbLevel = 0.07f;
+  constexpr float kActiveMotionRgbBoost = 0.20f;
+  constexpr float kActiveBaseSaturation = 0.18f;
+  constexpr float kActiveMotionSaturationBoost = 0.45f;
+  constexpr float kDecayEndHue = 0.12f;
+  constexpr float kDecayEndSaturation = 0.07f;
+  constexpr float kDecayEndRgbLevel = 0.02f;
+
   // Ambient-light placeholders. Real values come later.
   constexpr float kDarkEnterLux = 8.0f;
   constexpr float kDarkExitLux = 16.0f;
