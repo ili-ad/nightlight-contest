@@ -17,9 +17,17 @@ void LampStateMachine::begin() {
   mContext.nowMs = now;
 }
 
-void LampStateMachine::update() {
+void LampStateMachine::update(bool darkAllowed, float ambientLux, const CorePresence& presence) {
   const uint32_t now = millis();
   mContext.nowMs = now;
+
+  mContext.darkAllowed = darkAllowed;
+  mContext.ambientLux = ambientLux;
+  mContext.presenceOnline = presence.online;
+  mContext.presenceDetected = presence.present;
+  mContext.presenceConfidence = presence.presenceConfidence;
+  mContext.distanceHint = presence.distanceHint;
+  mContext.motionHint = presence.motionHint;
 
   switch (mContext.state) {
     case LampState::BootAnimation:
