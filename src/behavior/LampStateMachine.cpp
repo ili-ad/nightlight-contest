@@ -23,7 +23,7 @@ void LampStateMachine::begin() {
   mContext.activeEffectId = effectIdForState(LampState::BootAnimation);
 }
 
-void LampStateMachine::update(bool darkAllowed, float ambientLux, const CorePresence& presence) {
+void LampStateMachine::update(bool darkAllowed, float ambientLux, const CorePresence& presence, bool forceFaultSafe) {
   const uint32_t now = millis();
   mContext.nowMs = now;
 
@@ -34,6 +34,11 @@ void LampStateMachine::update(bool darkAllowed, float ambientLux, const CorePres
   mContext.presenceConfidence = presence.presenceConfidence;
   mContext.distanceHint = presence.distanceHint;
   mContext.motionHint = presence.motionHint;
+
+  if (forceFaultSafe && mContext.state != LampState::FaultSafe) {
+    transitionTo(mContext, LampState::FaultSafe, now);
+    return;
+  }
 
   switch (mContext.state) {
     case LampState::BootAnimation:
@@ -81,7 +86,9 @@ void LampStateMachine::update(bool darkAllowed, float ambientLux, const CorePres
       break;
 
     case LampState::FaultSafe:
-      transitionTo(mContext, darkAllowed ? LampState::NightIdle : LampState::DayDormant, now);
+      if (mContext.elapsedInStateMs() >= BuildConfig::kFaultSafeHoldMs) {
+        transitionTo(mContext, darkAllowed ? LampState::NightIdle : LampState::DayDormant, now);
+      }
       break;
 
     default:

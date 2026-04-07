@@ -6,7 +6,7 @@
 class LampStateMachine {
 public:
   void begin();
-  void update(bool darkAllowed, float ambientLux, const CorePresence& presence);
+  void update(bool darkAllowed, float ambientLux, const CorePresence& presence, bool forceFaultSafe);
   const BehaviorContext& context() const;
 
 private:
