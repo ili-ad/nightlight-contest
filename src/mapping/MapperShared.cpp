@@ -86,18 +86,18 @@ RenderIntent MapperShared::mapNightIdle(const BehaviorContext& context) const {
 RenderIntent MapperShared::mapActiveInterpretive(const BehaviorContext& context) const {
   RenderIntent intent{};
   const float confidence = clamp01(context.presenceConfidence);
-  const float distance = clamp01(context.distanceHint);
+  // Input convention is "higher distanceHint == nearer presence".
+  const float nearness = clamp01(context.distanceHint);
   const float motion = clamp01(context.motionHint);
-  const float proximity = 1.0f - distance;
 
-  const float strength = clamp01((0.65f * confidence) + (0.35f * proximity));
+  const float strength = clamp01((0.65f * confidence) + (0.35f * nearness));
   const float baseWhite = lerp(BuildConfig::kActiveBrightnessMin, BuildConfig::kActiveBrightnessMax, strength);
 
   const float stillness = 1.0f - motion;
-  const float stillCloseSoftness = clamp01(proximity * stillness);
+  const float stillCloseSoftness = clamp01(nearness * stillness);
 
   intent.whiteLevel = context.darkAllowed ? baseWhite : 0.0f;
-  intent.hue = lerp(BuildConfig::kActiveFarHue, BuildConfig::kActiveNearHue, proximity);
+  intent.hue = lerp(BuildConfig::kActiveFarHue, BuildConfig::kActiveNearHue, nearness);
   intent.hue = lerp(intent.hue, BuildConfig::kActiveNearHue, stillCloseSoftness * 0.35f);
 
   intent.saturation = BuildConfig::kActiveBaseSaturation + (motion * BuildConfig::kActiveMotionSaturationBoost);
@@ -113,7 +113,10 @@ RenderIntent MapperShared::mapActiveInterpretive(const BehaviorContext& context)
 }
 
 RenderIntent MapperShared::mapDecay(const BehaviorContext& context) const {
-  const RenderIntent start = mapActiveInterpretive(context);
+  BehaviorContext seeded = context;
+  seeded.presenceConfidence = fmaxf(context.presenceConfidence, BuildConfig::kPresenceEnterThreshold);
+  seeded.distanceHint = fmaxf(context.distanceHint, BuildConfig::kPresenceEnterThreshold);
+  const RenderIntent start = mapActiveInterpretive(seeded);
   RenderIntent intent = start;
 
   const float t = clamp01(static_cast<float>(context.elapsedInStateMs()) /
