@@ -151,4 +151,22 @@ namespace BuildConfig {
   static_assert(kDecayMs > 0, "Decay duration must be > 0");
   static_assert(kFaultSafeHoldMs > 0, "Fault-safe hold duration must be > 0");
   static_assert(kSimLoopMs > 0, "Simulation loop duration must be > 0");
+  static_assert(kSimDarkIdleMs < kSimApproachEndMs,
+                "Simulation boundary order invalid: kSimDarkIdleMs must be < "
+                "kSimApproachEndMs");
+  static_assert(kSimApproachEndMs < kSimNearStillEndMs,
+                "Simulation boundary order invalid: kSimApproachEndMs must be < "
+                "kSimNearStillEndMs");
+  static_assert(kSimNearStillEndMs < kSimRetreatEndMs,
+                "Simulation boundary order invalid: kSimNearStillEndMs must be < "
+                "kSimRetreatEndMs");
+  static_assert(kSimRetreatEndMs < kSimDarkAbsentEndMs,
+                "Simulation boundary order invalid: kSimRetreatEndMs must be < "
+                "kSimDarkAbsentEndMs");
+  static_assert(kSimDarkAbsentEndMs < kSimDayLockoutEndMs,
+                "Simulation boundary order invalid: kSimDarkAbsentEndMs must be < "
+                "kSimDayLockoutEndMs");
+  static_assert(kSimDayLockoutEndMs < kSimLoopMs,
+                "Simulation boundary order invalid: kSimDayLockoutEndMs must be < "
+                "kSimLoopMs");
 }
