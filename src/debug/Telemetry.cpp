@@ -38,6 +38,7 @@ void Telemetry::begin() {
   mLastNoTargetCommitted = false;
   mLastOfflineLogMs = 0;
   mLastPresenceLogMs = 0;
+  mLastRawC4001LogMs = 0;
   mHadAmbientPending = false;
   mLastAmbientWaitingOnHold = false;
   mLastAmbientPendingToDark = false;
@@ -72,7 +73,9 @@ const char* Telemetry::sampleKindName(PresenceC4001::SampleKind kind) {
 
 void Telemetry::update(const LampStateMachine& stateMachine,
                        const PresenceC4001::LinkStatus& c4001LinkStatus,
-                       const AmbientGateResult& ambientGate) {
+                       const AmbientGateResult& ambientGate,
+                       const C4001PresenceRich& c4001Rich,
+                       const RenderIntent& intent) {
   const BehaviorContext& context = stateMachine.context();
   const uint32_t nowMs = millis();
   const bool stateChanged = !mHasLastState || (context.state != mLastState);
@@ -86,6 +89,11 @@ void Telemetry::update(const LampStateMachine& stateMachine,
        ((nowMs - mLastPresenceLogMs) >= BuildConfig::kTelemetryPresenceLogIntervalMs));
   const bool linkChanged = linkTransitioned || offlinePeriodic;
   const bool shouldLogPresence = presencePeriodic;
+  const bool rawC4001Periodic =
+      ((mLastRawC4001LogMs == 0) ||
+       ((nowMs - mLastRawC4001LogMs) >= BuildConfig::kTelemetryC4001RawLogIntervalMs));
+  const bool shouldLogRawC4001 =
+      rawC4001Periodic && (context.state == LampState::ActiveInterpretive);
   const bool sampleKindChanged = c4001LinkStatus.sampleKind != mLastSampleKind;
   const bool noTargetModeChanged =
       (c4001LinkStatus.noTargetHolding != mLastNoTargetHolding) ||
@@ -105,7 +113,8 @@ void Telemetry::update(const LampStateMachine& stateMachine,
                                 ambientPendingModeChanged || ambientSuppressionChanged ||
                                 ambientSuppressionEscaped;
 
-  if (!stateChanged && !linkChanged && !shouldLogPresence && !shouldLogAmbient && !shouldLogNoTarget) {
+  if (!stateChanged && !linkChanged && !shouldLogPresence && !shouldLogAmbient && !shouldLogNoTarget &&
+      !shouldLogRawC4001) {
     return;
   }
 
@@ -196,6 +205,20 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   }
 
   if (!stateChanged) {
+    if (shouldLogRawC4001) {
+      mLastRawC4001LogMs = nowMs;
+      Serial.print("c4001_raw targetNumber=");
+      Serial.print(c4001Rich.targetNumber);
+      Serial.print(" targetRangeM=");
+      Serial.print(c4001Rich.targetRangeM, 2);
+      Serial.print(" targetSpeedMps=");
+      Serial.print(c4001Rich.targetSpeedMps, 2);
+      Serial.print(" sceneCharge=");
+      Serial.print(intent.sceneCharge, 2);
+      Serial.print(" sceneIngress=");
+      Serial.println(intent.sceneIngressLevel, 2);
+    }
+
     if (shouldLogPresence) {
       mLastPresenceLogMs = nowMs;
       Serial.print("presence confidence=");
