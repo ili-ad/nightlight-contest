@@ -24,7 +24,7 @@ namespace {
 
 #if NIGHTLIGHT_HAS_C4001_LIB
 namespace {
-  DFRobot_C4001_I2C gC4001;
+  DFRobot_C4001_I2C gC4001(&Wire, BuildConfig::kC4001I2cAddress);
 }
 #endif
 
@@ -32,7 +32,9 @@ void PresenceC4001::begin() {
   initialized_ = true;
   linkStatus_ = {};
   lastPollMs_ = 0;
+  lastInitAttemptMs_ = 0;
   hasPolled_ = false;
+  sensorReady_ = false;
   confidenceEma_ = 0.0f;
   distanceEma_ = 0.0f;
   motionEma_ = 0.0f;
@@ -40,13 +42,15 @@ void PresenceC4001::begin() {
   lastRich_ = {};
 
   Wire.begin();
-  const bool online = initSensor();
+  sensorReady_ = initSensor();
+  const bool online = sensorReady_;
   linkStatus_.state = online ? LinkState::Online : LinkState::Offline;
   linkStatus_.online = online;
   linkStatus_.holding = false;
   linkStatus_.consecutiveFailures = 0;
   linkStatus_.lastSuccessMs = online ? millis() : 0;
   linkStatus_.lastFailureMs = 0;
+  linkStatus_.lastSampleMs = 0;
 
   lastCore_.online = online;
   lastCore_.timestampMs = millis();
@@ -63,6 +67,16 @@ PresenceC4001::Snapshot PresenceC4001::read() {
   }
   lastPollMs_ = nowMs;
   hasPolled_ = true;
+  linkStatus_.lastSampleMs = nowMs;
+
+  if (!sensorReady_ && shouldAttemptInit(nowMs)) {
+    lastInitAttemptMs_ = nowMs;
+    sensorReady_ = initSensor();
+  }
+
+  if (!sensorReady_) {
+    return applyFailure(nowMs);
+  }
 
   C4001PresenceRich rich{};
   if (readSensorRich(rich)) {
@@ -91,7 +105,7 @@ const PresenceC4001::LinkStatus& PresenceC4001::linkStatus() const {
 
 bool PresenceC4001::initSensor() {
 #if NIGHTLIGHT_HAS_C4001_LIB
-  if (!gC4001.begin(BuildConfig::kC4001I2cAddress, &Wire)) {
+  if (!gC4001.begin()) {
     return false;
   }
 
@@ -124,6 +138,13 @@ bool PresenceC4001::readSensorRich(C4001PresenceRich& outRich) {
 #else
   return false;
 #endif
+}
+
+bool PresenceC4001::shouldAttemptInit(uint32_t nowMs) const {
+  if (lastInitAttemptMs_ == 0) {
+    return true;
+  }
+  return (nowMs - lastInitAttemptMs_) >= BuildConfig::kC4001ReinitIntervalMs;
 }
 
 bool PresenceC4001::shouldPoll(uint32_t nowMs) const {
@@ -177,6 +198,7 @@ CorePresence PresenceC4001::buildCoreFromRich(const C4001PresenceRich& rich, uin
 PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
   ++linkStatus_.consecutiveFailures;
   linkStatus_.lastFailureMs = nowMs;
+  linkStatus_.lastSampleMs = nowMs;
   linkStatus_.online =
       (linkStatus_.consecutiveFailures <= BuildConfig::kC4001MaxConsecutiveFailuresForOnline);
 

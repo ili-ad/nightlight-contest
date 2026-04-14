@@ -80,6 +80,7 @@ namespace BuildConfig {
   constexpr bool kEnableInterludes = true;
   constexpr bool kEnableTelemetry = true;
   constexpr uint32_t kTelemetryOfflineLogIntervalMs = 250;
+  constexpr uint32_t kTelemetryPresenceLogIntervalMs = 500;
 
   constexpr uint32_t kBootAnimationMs = 1800;
   constexpr uint32_t kInterludeMaxMs = 400;
@@ -101,12 +102,13 @@ namespace BuildConfig {
   // - Decay confidence + hints gently while disconnected.
   // - Drop to sane empty state after sustained dropout.
   constexpr uint8_t kC4001MaxConsecutiveFailuresForOnline = 2;
-  constexpr uint32_t kC4001PollIntervalMs = 80;
+  constexpr uint32_t kC4001PollIntervalMs = 35;
   constexpr uint32_t kC4001DropoutHoldMs = 450;
   constexpr float kC4001ConfidenceDecayPerFailure = 0.18f;
   constexpr float kC4001DistanceDecayPerFailure = 0.12f;
   constexpr float kC4001MotionDecayPerFailure = 0.18f;
   constexpr uint32_t kC4001DropoutForceEmptyMs = 1400;
+  constexpr uint32_t kC4001ReinitIntervalMs = 1000;
 
   constexpr float kC4001ConfidenceEmaAlpha = 0.30f;
   constexpr float kC4001DistanceEmaAlpha = 0.35f;

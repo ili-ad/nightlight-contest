@@ -34,6 +34,7 @@ void Telemetry::begin() {
   mHasLastLinkState = false;
   mLastLinkState = PresenceC4001::LinkState::Offline;
   mLastOfflineLogMs = 0;
+  mLastPresenceLogMs = 0;
 }
 
 const char* Telemetry::linkStateName(PresenceC4001::LinkState state) {
@@ -58,9 +59,13 @@ void Telemetry::update(const LampStateMachine& stateMachine,
       (c4001LinkStatus.state == PresenceC4001::LinkState::Offline) &&
       ((mLastOfflineLogMs == 0) ||
        ((nowMs - mLastOfflineLogMs) >= BuildConfig::kTelemetryOfflineLogIntervalMs));
+  const bool presencePeriodic =
+      ((mLastPresenceLogMs == 0) ||
+       ((nowMs - mLastPresenceLogMs) >= BuildConfig::kTelemetryPresenceLogIntervalMs));
   const bool linkChanged = linkTransitioned || offlinePeriodic;
+  const bool shouldLogPresence = presencePeriodic;
 
-  if (!stateChanged && !linkChanged) {
+  if (!stateChanged && !linkChanged && !shouldLogPresence) {
     return;
   }
 
@@ -88,6 +93,21 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   }
 
   if (!stateChanged) {
+    if (shouldLogPresence) {
+      mLastPresenceLogMs = nowMs;
+      Serial.print("presence confidence=");
+      Serial.print(context.presenceConfidence, 2);
+      Serial.print(" distance=");
+      Serial.print(context.distanceHint, 2);
+      Serial.print(" motion=");
+      Serial.print(context.motionHint, 2);
+      Serial.print(" age_ms=");
+      if (c4001LinkStatus.lastSuccessMs == 0) {
+        Serial.println("n/a");
+      } else {
+        Serial.println(nowMs - c4001LinkStatus.lastSuccessMs);
+      }
+    }
     return;
   }
   mHasLastState = true;

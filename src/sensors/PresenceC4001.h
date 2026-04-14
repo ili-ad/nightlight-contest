@@ -14,9 +14,10 @@ public:
     LinkState state = LinkState::Offline;
     bool online = false;
     bool holding = false;
-    uint8_t consecutiveFailures = 0;
+    uint16_t consecutiveFailures = 0;
     uint32_t lastSuccessMs = 0;
     uint32_t lastFailureMs = 0;
+    uint32_t lastSampleMs = 0;
   };
 
   struct Snapshot {
@@ -33,6 +34,7 @@ public:
 private:
   bool initSensor();
   bool readSensorRich(C4001PresenceRich& outRich);
+  bool shouldAttemptInit(uint32_t nowMs) const;
 
   static float clamp01(float value);
   static float decayTowardZero(float value, float decayPerFailure);
@@ -44,7 +46,9 @@ private:
   bool initialized_ = false;
   LinkStatus linkStatus_{};
   uint32_t lastPollMs_ = 0;
+  uint32_t lastInitAttemptMs_ = 0;
   bool hasPolled_ = false;
+  bool sensorReady_ = false;
 
   CorePresence lastCore_{};
   C4001PresenceRich lastRich_{};
