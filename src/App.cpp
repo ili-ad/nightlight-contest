@@ -33,6 +33,7 @@ namespace {
   struct AppInputs {
     bool darkAllowed = false;
     float ambientLux = 0.0f;
+    AmbientGateResult ambientGate;
     CorePresence presence;
     bool forceFaultSafe = false;
   };
@@ -47,7 +48,9 @@ namespace {
       inputs.ambientLux = ambient.luxRaw;
     }
 
-    inputs.darkAllowed = gAmbientGate.update(inputs.ambientLux).darkAllowed;
+    inputs.ambientGate = gAmbientGate.update(inputs.ambientLux);
+    inputs.darkAllowed = inputs.ambientGate.darkAllowed;
+    inputs.ambientLux = inputs.ambientGate.gateLux;
     inputs.presence = gPresenceManager.readCore();
 
     // 2) Optional explicit debug override.
@@ -178,5 +181,5 @@ void App::loop() {
 
   renderFrame(context, finalIntent);
   gPixelBus.show();
-  gTelemetry.update(gStateMachine, gPresenceManager.c4001LinkStatus());
+  gTelemetry.update(gStateMachine, gPresenceManager.c4001LinkStatus(), inputs.ambientGate);
 }
