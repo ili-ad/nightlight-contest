@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+#include "../BuildConfig.h"
+
 namespace {
   const char* stateName(LampState state) {
     switch (state) {
@@ -31,7 +33,7 @@ void Telemetry::begin() {
   mLastState = LampState::BootAnimation;
   mHasLastLinkState = false;
   mLastLinkState = PresenceC4001::LinkState::Offline;
-  mLastFailureCount = 0;
+  mLastOfflineLogMs = 0;
 }
 
 const char* Telemetry::linkStateName(PresenceC4001::LinkState state) {
@@ -49,9 +51,14 @@ const char* Telemetry::linkStateName(PresenceC4001::LinkState state) {
 void Telemetry::update(const LampStateMachine& stateMachine,
                        const PresenceC4001::LinkStatus& c4001LinkStatus) {
   const BehaviorContext& context = stateMachine.context();
+  const uint32_t nowMs = millis();
   const bool stateChanged = !mHasLastState || (context.state != mLastState);
-  const bool linkChanged = !mHasLastLinkState || (c4001LinkStatus.state != mLastLinkState) ||
-                           (c4001LinkStatus.consecutiveFailures != mLastFailureCount);
+  const bool linkTransitioned = !mHasLastLinkState || (c4001LinkStatus.state != mLastLinkState);
+  const bool offlinePeriodic =
+      (c4001LinkStatus.state == PresenceC4001::LinkState::Offline) &&
+      ((mLastOfflineLogMs == 0) ||
+       ((nowMs - mLastOfflineLogMs) >= BuildConfig::kTelemetryOfflineLogIntervalMs));
+  const bool linkChanged = linkTransitioned || offlinePeriodic;
 
   if (!stateChanged && !linkChanged) {
     return;
@@ -60,7 +67,9 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   if (linkChanged) {
     mHasLastLinkState = true;
     mLastLinkState = c4001LinkStatus.state;
-    mLastFailureCount = c4001LinkStatus.consecutiveFailures;
+    if (c4001LinkStatus.state == PresenceC4001::LinkState::Offline) {
+      mLastOfflineLogMs = nowMs;
+    }
 
     Serial.print("presence_link=");
     Serial.print(linkStateName(c4001LinkStatus.state));
