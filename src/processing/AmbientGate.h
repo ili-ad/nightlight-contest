@@ -15,14 +15,14 @@ struct AmbientGateResult {
   uint32_t pendingRequiredMs = 0;
   uint32_t holdRemainingMs = 0;
   bool dayExitSuppressedByActive = false;
+  bool dayExitSuppressionEscaped = false;
 };
 
 class AmbientGate {
 public:
   AmbientGateResult update(float lux,
                            LampState lampState,
-                           float presenceConfidence,
-                           bool presenceDetected);
+                           float presenceConfidence);
 
 private:
   void clearPending();
@@ -38,4 +38,6 @@ private:
   uint32_t pendingRequiredMs_ = 0;
 
   uint32_t lastTransitionMs_ = 0;
+  bool suppressingDayExit_ = false;
+  uint32_t suppressDayExitSinceMs_ = 0;
 };

@@ -1,5 +1,6 @@
 #include "MapperShared.h"
 #include "../BuildConfig.h"
+#include <Arduino.h>
 #include <math.h>
 
 namespace {
@@ -69,12 +70,12 @@ RenderIntent MapperShared::mapDecayBaseline(const BehaviorContext& context) cons
 
 RenderIntent MapperShared::mapDayDormant(const BehaviorContext&) const {
   RenderIntent intent{};
-  intent.whiteLevel = 0.0f;
+  intent.whiteLevel = BuildConfig::kDayDormantWhiteFloor;
   intent.hue = BuildConfig::kIdleHue;
-  intent.saturation = 0.0f;
-  intent.rgbLevel = 0.0f;
-  intent.animationRate = 0.0f;
-  intent.phase = 0.0f;
+  intent.saturation = BuildConfig::kDayDormantSaturation;
+  intent.rgbLevel = BuildConfig::kDayDormantRgbFloor;
+  intent.animationRate = BuildConfig::kDayDormantAnimationRate;
+  intent.phase = normalizedPhase(millis(), intent.animationRate);
   intent.emphasizedSegment = SegmentId::Ring;
   return intent;
 }

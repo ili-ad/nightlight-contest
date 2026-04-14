@@ -78,8 +78,10 @@ void Telemetry::update(const LampStateMachine& stateMachine,
        (mLastAmbientPendingToDark != ambientGate.pendingToDark));
   const bool ambientSuppressionChanged =
       (mLastAmbientSuppressed != ambientGate.dayExitSuppressedByActive);
+  const bool ambientSuppressionEscaped = ambientGate.dayExitSuppressionEscaped;
   const bool shouldLogAmbient = ambientGate.transitionCommitted || ambientPendingChanged ||
-                                ambientPendingModeChanged || ambientSuppressionChanged;
+                                ambientPendingModeChanged || ambientSuppressionChanged ||
+                                ambientSuppressionEscaped;
 
   if (!stateChanged && !linkChanged && !shouldLogPresence && !shouldLogAmbient) {
     return;
@@ -96,12 +98,15 @@ void Telemetry::update(const LampStateMachine& stateMachine,
     if (ambientGate.transitionCommitted) {
       Serial.print(" event=commit to=");
       Serial.println(ambientGate.darkAllowed ? "night" : "day");
-    } else if (ambientGate.dayExitSuppressedByActive && !ambientGate.pendingToDark &&
+    } else if (ambientGate.dayExitSuppressionEscaped && !ambientGate.pendingToDark &&
                (ambientGate.waitingOnDwell || ambientGate.waitingOnHold)) {
-      Serial.print(" event=day_suppressed_active dwell_ms=");
+      Serial.print(" event=day_suppression_escaped dwell_ms=");
       Serial.print(ambientGate.pendingElapsedMs);
       Serial.print("/");
       Serial.println(ambientGate.pendingRequiredMs);
+    } else if (ambientGate.dayExitSuppressedByActive && !ambientGate.pendingToDark &&
+               !ambientGate.waitingOnDwell && !ambientGate.waitingOnHold) {
+      Serial.println(" event=day_suppressed_active");
     } else if (ambientGate.waitingOnHold) {
       Serial.print(" event=hold_wait to=");
       Serial.print(ambientGate.pendingToDark ? "night" : "day");

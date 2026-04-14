@@ -52,8 +52,7 @@ namespace {
     const LampState currentState = gStateMachine.context().state;
     inputs.ambientGate = gAmbientGate.update(inputs.ambientLux,
                                              currentState,
-                                             inputs.presence.presenceConfidence,
-                                             inputs.presence.present);
+                                             inputs.presence.presenceConfidence);
     inputs.darkAllowed = inputs.ambientGate.darkAllowed;
     inputs.ambientLux = inputs.ambientGate.gateLux;
 
