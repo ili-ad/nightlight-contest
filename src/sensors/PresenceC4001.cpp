@@ -156,9 +156,13 @@ CorePresence PresenceC4001::buildCoreFromRich(const C4001PresenceRich& rich, uin
   CorePresence core{};
 
   const bool targetSeen = (rich.targetNumber > 0);
-  const float distanceNearness = clamp01(1.0f - (rich.targetRangeM / kAssumedUsefulRangeM));
-  const float speedAbs = fabsf(rich.targetSpeedMps);
-  const float motion = clamp01(speedAbs / kMotionSpeedScaleMps);
+  float distanceNearness = 0.0f;
+  float motion = 0.0f;
+  if (targetSeen) {
+    distanceNearness = clamp01(1.0f - (rich.targetRangeM / kAssumedUsefulRangeM));
+    const float speedAbs = fabsf(rich.targetSpeedMps);
+    motion = clamp01(speedAbs / kMotionSpeedScaleMps);
+  }
 
   const float baseConfidence = targetSeen ? (0.55f + (0.30f * distanceNearness) + (0.15f * motion)) : 0.0f;
 
