@@ -77,6 +77,17 @@ PresenceC4001::Snapshot PresenceC4001::read() {
     linkStatus_.holding = false;
     linkStatus_.state = LinkState::Online;
     linkStatus_.lastSuccessMs = nowMs;
+    linkStatus_.sampleKind = (rich.targetNumber > 0) ? SampleKind::Target : SampleKind::NoTarget;
+
+    if (rich.targetNumber <= 0) {
+      return applyNoTargetSuccess(rich, nowMs);
+    }
+
+    linkStatus_.consecutiveNoTargetSamples = 0;
+    linkStatus_.noTargetSinceMs = 0;
+    linkStatus_.lastTargetMs = nowMs;
+    linkStatus_.noTargetHolding = false;
+    linkStatus_.noTargetCommitted = false;
 
     CorePresence core = buildCoreFromRich(rich, nowMs);
     lastRich_ = rich;
@@ -183,10 +194,60 @@ CorePresence PresenceC4001::buildCoreFromRich(const C4001PresenceRich& rich, uin
   return core;
 }
 
+PresenceC4001::Snapshot PresenceC4001::applyNoTargetSuccess(const C4001PresenceRich& rich,
+                                                            uint32_t nowMs) {
+  CorePresence core = lastCore_;
+  lastRich_ = rich;
+
+  ++linkStatus_.consecutiveNoTargetSamples;
+  if (linkStatus_.noTargetSinceMs == 0) {
+    linkStatus_.noTargetSinceMs = nowMs;
+  }
+
+  const uint32_t msSinceLastTarget =
+      (linkStatus_.lastTargetMs == 0) ? 0xFFFFFFFFu : (nowMs - linkStatus_.lastTargetMs);
+  const uint32_t noTargetDurationMs = nowMs - linkStatus_.noTargetSinceMs;
+  const bool withinNoTargetGrace =
+      (linkStatus_.lastTargetMs != 0) && (msSinceLastTarget <= BuildConfig::kC4001NoTargetGraceMs);
+  const bool sustainedNoTarget =
+      (linkStatus_.consecutiveNoTargetSamples >= BuildConfig::kC4001NoTargetRequiredConsecutiveSamples) &&
+      (noTargetDurationMs >= BuildConfig::kC4001NoTargetRequiredWindowMs);
+
+  linkStatus_.noTargetHolding = withinNoTargetGrace;
+  linkStatus_.noTargetCommitted = !withinNoTargetGrace && sustainedNoTarget;
+
+  const float decay = withinNoTargetGrace ? BuildConfig::kC4001NoTargetGraceDecayPerSample
+                                          : BuildConfig::kC4001NoTargetDecayPerSample;
+
+  core.online = true;
+  core.presenceConfidence = decayTowardZero(core.presenceConfidence, decay);
+  core.distanceHint = decayTowardZero(core.distanceHint, decay);
+  core.motionHint = decayTowardZero(core.motionHint, decay);
+  core.timestampMs = nowMs;
+
+  if (linkStatus_.noTargetCommitted) {
+    core.present = false;
+    core.presenceConfidence = 0.0f;
+    core.distanceHint = 0.0f;
+    core.motionHint = 0.0f;
+  } else {
+    core.present = withinNoTargetGrace || (core.presenceConfidence > BuildConfig::kPresenceExitThreshold);
+  }
+
+  confidenceEma_ = core.presenceConfidence;
+  distanceEma_ = core.distanceHint;
+  motionEma_ = core.motionHint;
+  lastCore_ = core;
+  return {core, rich};
+}
+
 PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
   ++linkStatus_.consecutiveFailures;
   linkStatus_.lastFailureMs = nowMs;
   linkStatus_.lastSampleMs = nowMs;
+  linkStatus_.sampleKind = SampleKind::ReadFailure;
+  linkStatus_.noTargetHolding = false;
+  linkStatus_.noTargetCommitted = false;
   linkStatus_.online =
       (linkStatus_.consecutiveFailures <= BuildConfig::kC4001MaxConsecutiveFailuresForOnline);
 

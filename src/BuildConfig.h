@@ -110,6 +110,14 @@ namespace BuildConfig {
   constexpr uint32_t kC4001DropoutForceEmptyMs = 1400;
   constexpr uint32_t kC4001ReinitIntervalMs = 1000;
 
+  // Successful no-target reads are treated as transient target loss for a
+  // short grace period before true absence is committed.
+  constexpr uint32_t kC4001NoTargetGraceMs = 420;
+  constexpr uint16_t kC4001NoTargetRequiredConsecutiveSamples = 5;
+  constexpr uint32_t kC4001NoTargetRequiredWindowMs = 180;
+  constexpr float kC4001NoTargetGraceDecayPerSample = 0.05f;
+  constexpr float kC4001NoTargetDecayPerSample = 0.18f;
+
   constexpr float kC4001ConfidenceEmaAlpha = 0.30f;
   constexpr float kC4001DistanceEmaAlpha = 0.35f;
   constexpr float kC4001MotionEmaAlpha = 0.35f;
