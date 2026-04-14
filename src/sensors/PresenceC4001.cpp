@@ -101,10 +101,20 @@ bool PresenceC4001::readSensorRich(C4001PresenceRich& outRich) {
     return false;
   }
 
+  // C4001 API audit (current DFRobot I2C path used by this repo):
+  // - getTargetNumber()
+  // - getTargetRange()
+  // - getTargetSpeed()
+  // - getTargetEnergy()
+  // No angle/azimuth/lateral/XY/beam-index accessor is used or exposed in this path,
+  // so directional placeholders remain intentionally neutral.
   outRich.targetNumber = gC4001.getTargetNumber();
   outRich.targetRangeM = gC4001.getTargetRange();
   outRich.targetSpeedMps = gC4001.getTargetSpeed();
   outRich.targetEnergy = gC4001.getTargetEnergy();
+  outRich.hasAngle = false;
+  outRich.angleNorm = 0.0f;
+  outRich.lateralBias = 0.0f;
   return true;
 #else
   return false;
@@ -144,6 +154,9 @@ CorePresence PresenceC4001::buildCoreFromRich(const C4001PresenceRich& rich, uin
   core.presenceConfidence = confidenceEma_;
   core.distanceHint = distanceEma_;
   core.motionHint = motionEma_;
+  core.hasAngle = rich.hasAngle;
+  core.angleNorm = rich.angleNorm;
+  core.lateralBias = rich.lateralBias;
   core.timestampMs = nowMs;
 
   return core;
