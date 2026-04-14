@@ -36,6 +36,7 @@ namespace {
   AppInputs readInputs() {
     AppInputs inputs;
 
+    // 1) Read live hardware first.
     AmbientReading ambient = gAmbientSensor.read();
     inputs.ambientLux = ambient.luxSmoothed;
     if (!ambient.online) {
@@ -45,13 +46,15 @@ namespace {
     inputs.darkAllowed = gAmbientGate.update(inputs.ambientLux).darkAllowed;
     inputs.presence = gPresenceManager.readCore();
 
+    // 2) Optional explicit debug override.
     const DebugInputSample sim = DebugModes::sample(millis());
     if (sim.useSimulated) {
       inputs.darkAllowed = sim.darkAllowed;
       inputs.ambientLux = sim.ambientLux;
       inputs.presence = sim.presence;
-      inputs.forceFaultSafe = sim.forceFaultSafe;
     }
+    // 3) Fault-safe forcing remains available in debug simulation mode.
+    inputs.forceFaultSafe = sim.useSimulated && sim.forceFaultSafe;
 
     return inputs;
   }

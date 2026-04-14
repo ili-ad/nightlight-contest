@@ -31,15 +31,19 @@ namespace BuildConfig {
   // ---------------------------------------------------------------------------
   // Hardware/backend selection
   // ---------------------------------------------------------------------------
-  // Presence backend remains None until sensor integrations land in later tickets.
-  constexpr PresenceBackend kPresenceBackend = PresenceBackend::None;
+  // Default runtime posture is hardware-first:
+  // - BH1750 ambient via AmbientBh1750/AmbientGate
+  // - C4001 presence via PresenceManager
+  // Switch these only when intentionally testing alternate benches/backends.
+  constexpr PresenceBackend kPresenceBackend = PresenceBackend::C4001;
   constexpr RenderBackend kRenderBackend = RenderBackend::RGBW;
 
   // ---------------------------------------------------------------------------
   // Debug simulation
   // ---------------------------------------------------------------------------
-  // Keep simulated input available as a harness until live presence paths land.
-  constexpr DebugInputMode kDebugInputMode = DebugInputMode::SimulatedApproachLoop;
+  // Simulation remains available for explicit debug/repro runs.
+  // Set to SimulatedApproachLoop only when intentionally overriding live input.
+  constexpr DebugInputMode kDebugInputMode = DebugInputMode::None;
 
   // Major simulated loop choreography boundaries.
   constexpr uint32_t kSimDarkIdleMs = 1200;
