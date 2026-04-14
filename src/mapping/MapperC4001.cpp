@@ -78,8 +78,7 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     intent.sceneNowMs = context.nowMs;
 
     const float nearness = clamp01(1.0f - normalizeRange(mSmoothedRangeM));
-    intent.sceneCharge = clamp01((nearness * BuildConfig::kAnthuriumDistanceToChargeGain) +
-                                 (energyNorm * 0.10f));
+    intent.sceneCharge = clamp01(nearness * BuildConfig::kAnthuriumDistanceToChargeGain);
     intent.sceneTargetRangeM = mHeldRangeM;
     intent.sceneTargetRangeSmoothedM = mSmoothedRangeM;
     intent.sceneChargeTarget = intent.sceneCharge;

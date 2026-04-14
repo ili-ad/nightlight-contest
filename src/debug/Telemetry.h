@@ -25,5 +25,4 @@ private:
 
   bool mHasLastState = false;
   LampState mLastState = LampState::BootAnimation;
-  bool mLastAmbientSuppressed = false;
 };

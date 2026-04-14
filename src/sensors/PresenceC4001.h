@@ -20,7 +20,8 @@ public:
     None = 0,
     SpeedCap,
     RangeDelta,
-    NearFieldCoherence
+    NearFieldCoherence,
+    NoTarget
   };
 
   struct LinkStatus {

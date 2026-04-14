@@ -44,7 +44,6 @@ void Telemetry::begin() {
   mLastLinkState = PresenceC4001::LinkState::Offline;
   mLastOfflineLogMs = 0;
   mLastS27LogMs = 0;
-  mLastAmbientSuppressed = false;
 }
 
 const char* Telemetry::stateCode(LampState state) {
@@ -93,8 +92,6 @@ void Telemetry::update(const LampStateMachine& stateMachine,
        ((nowMs - mLastOfflineLogMs) >= BuildConfig::kTelemetryOfflineLogIntervalMs));
   const bool linkChanged = linkTransitioned || offlinePeriodic;
 
-  const bool ambientSuppressionRaised =
-      ambientGate.dayExitSuppressedByActive && !mLastAmbientSuppressed;
   const bool ambientCommit = ambientGate.transitionCommitted;
 #endif
 
@@ -111,11 +108,7 @@ void Telemetry::update(const LampStateMachine& stateMachine,
     Serial.print(ambientGate.darkAllowed ? "n" : "d");
     Serial.print(" lx=");
     Serial.println(ambientGate.gateLux, 1);
-  } else if (ambientSuppressionRaised) {
-    Serial.println("ag sup=1");
   }
-
-  mLastAmbientSuppressed = ambientGate.dayExitSuppressedByActive;
 
   if (linkChanged) {
     mHasLastLinkState = true;
