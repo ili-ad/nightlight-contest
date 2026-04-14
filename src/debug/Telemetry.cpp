@@ -33,6 +33,9 @@ void Telemetry::begin() {
   mLastState = LampState::BootAnimation;
   mHasLastLinkState = false;
   mLastLinkState = PresenceC4001::LinkState::Offline;
+  mLastSampleKind = PresenceC4001::SampleKind::Unknown;
+  mLastNoTargetHolding = false;
+  mLastNoTargetCommitted = false;
   mLastOfflineLogMs = 0;
   mLastPresenceLogMs = 0;
   mHadAmbientPending = false;
@@ -53,6 +56,20 @@ const char* Telemetry::linkStateName(PresenceC4001::LinkState state) {
   }
 }
 
+const char* Telemetry::sampleKindName(PresenceC4001::SampleKind kind) {
+  switch (kind) {
+    case PresenceC4001::SampleKind::Target:
+      return "target";
+    case PresenceC4001::SampleKind::NoTarget:
+      return "no_target";
+    case PresenceC4001::SampleKind::ReadFailure:
+      return "read_failure";
+    case PresenceC4001::SampleKind::Unknown:
+    default:
+      return "unknown";
+  }
+}
+
 void Telemetry::update(const LampStateMachine& stateMachine,
                        const PresenceC4001::LinkStatus& c4001LinkStatus,
                        const AmbientGateResult& ambientGate) {
@@ -69,6 +86,11 @@ void Telemetry::update(const LampStateMachine& stateMachine,
        ((nowMs - mLastPresenceLogMs) >= BuildConfig::kTelemetryPresenceLogIntervalMs));
   const bool linkChanged = linkTransitioned || offlinePeriodic;
   const bool shouldLogPresence = presencePeriodic;
+  const bool sampleKindChanged = c4001LinkStatus.sampleKind != mLastSampleKind;
+  const bool noTargetModeChanged =
+      (c4001LinkStatus.noTargetHolding != mLastNoTargetHolding) ||
+      (c4001LinkStatus.noTargetCommitted != mLastNoTargetCommitted);
+  const bool shouldLogNoTarget = sampleKindChanged || noTargetModeChanged;
   const bool ambientPendingNow = ambientGate.waitingOnDwell || ambientGate.waitingOnHold;
   const bool ambientPendingChanged =
       (!mHadAmbientPending && ambientPendingNow) || (mHadAmbientPending && !ambientPendingNow);
@@ -83,7 +105,7 @@ void Telemetry::update(const LampStateMachine& stateMachine,
                                 ambientPendingModeChanged || ambientSuppressionChanged ||
                                 ambientSuppressionEscaped;
 
-  if (!stateChanged && !linkChanged && !shouldLogPresence && !shouldLogAmbient) {
+  if (!stateChanged && !linkChanged && !shouldLogPresence && !shouldLogAmbient && !shouldLogNoTarget) {
     return;
   }
 
@@ -149,6 +171,27 @@ void Telemetry::update(const LampStateMachine& stateMachine,
       Serial.println("n/a");
     } else {
       Serial.println(millis() - c4001LinkStatus.lastSuccessMs);
+    }
+  }
+
+  if (shouldLogNoTarget) {
+    mLastSampleKind = c4001LinkStatus.sampleKind;
+    mLastNoTargetHolding = c4001LinkStatus.noTargetHolding;
+    mLastNoTargetCommitted = c4001LinkStatus.noTargetCommitted;
+
+    Serial.print("presence_sample=");
+    Serial.print(sampleKindName(c4001LinkStatus.sampleKind));
+    Serial.print(" no_target_hold=");
+    Serial.print(c4001LinkStatus.noTargetHolding ? "1" : "0");
+    Serial.print(" no_target_commit=");
+    Serial.print(c4001LinkStatus.noTargetCommitted ? "1" : "0");
+    Serial.print(" no_target_count=");
+    Serial.print(c4001LinkStatus.consecutiveNoTargetSamples);
+    Serial.print(" no_target_age_ms=");
+    if (c4001LinkStatus.noTargetSinceMs == 0) {
+      Serial.println("n/a");
+    } else {
+      Serial.println(nowMs - c4001LinkStatus.noTargetSinceMs);
     }
   }
 

@@ -10,14 +10,27 @@ public:
     Offline
   };
 
+  enum class SampleKind : uint8_t {
+    Unknown,
+    Target,
+    NoTarget,
+    ReadFailure
+  };
+
   struct LinkStatus {
     LinkState state = LinkState::Offline;
     bool online = false;
     bool holding = false;
     uint16_t consecutiveFailures = 0;
+    uint16_t consecutiveNoTargetSamples = 0;
     uint32_t lastSuccessMs = 0;
     uint32_t lastFailureMs = 0;
+    uint32_t lastTargetMs = 0;
+    uint32_t noTargetSinceMs = 0;
     uint32_t lastSampleMs = 0;
+    bool noTargetHolding = false;
+    bool noTargetCommitted = false;
+    SampleKind sampleKind = SampleKind::Unknown;
   };
 
   struct Snapshot {
@@ -39,6 +52,7 @@ private:
   static float clamp01(float value);
   static float decayTowardZero(float value, float decayPerFailure);
   CorePresence buildCoreFromRich(const C4001PresenceRich& rich, uint32_t nowMs);
+  Snapshot applyNoTargetSuccess(const C4001PresenceRich& rich, uint32_t nowMs);
 
   Snapshot applyFailure(uint32_t nowMs);
   bool shouldPoll(uint32_t nowMs) const;

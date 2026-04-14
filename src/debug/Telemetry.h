@@ -13,9 +13,13 @@ public:
 
 private:
   static const char* linkStateName(PresenceC4001::LinkState state);
+  static const char* sampleKindName(PresenceC4001::SampleKind kind);
 
   bool mHasLastLinkState = false;
   PresenceC4001::LinkState mLastLinkState = PresenceC4001::LinkState::Offline;
+  PresenceC4001::SampleKind mLastSampleKind = PresenceC4001::SampleKind::Unknown;
+  bool mLastNoTargetHolding = false;
+  bool mLastNoTargetCommitted = false;
   uint32_t mLastOfflineLogMs = 0;
   uint32_t mLastPresenceLogMs = 0;
 
