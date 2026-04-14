@@ -16,6 +16,12 @@ public:
     NoTarget,
     ReadFailure
   };
+  enum class RejectReason : uint8_t {
+    None = 0,
+    SpeedCap,
+    RangeDelta,
+    NearFieldCoherence
+  };
 
   struct LinkStatus {
     LinkState state = LinkState::Offline;
@@ -31,6 +37,8 @@ public:
     bool noTargetHolding = false;
     bool noTargetCommitted = false;
     SampleKind sampleKind = SampleKind::Unknown;
+    RejectReason rejectReason = RejectReason::None;
+    bool rejected = false;
   };
 
   struct Snapshot {
@@ -48,6 +56,12 @@ private:
   bool initSensor();
   bool readSensorRich(C4001PresenceRich& outRich);
   bool shouldAttemptInit(uint32_t nowMs) const;
+  bool acceptTargetSample(const C4001PresenceRich& rawRich,
+                          uint32_t nowMs,
+                          float& acceptedRangeM,
+                          float& acceptedSpeedMps,
+                          RejectReason& reason);
+  void clearNearFieldCoherence();
 
   static float clamp01(float value);
   static float decayTowardZero(float value, float decayPerFailure);
@@ -70,4 +84,12 @@ private:
   float confidenceEma_ = 0.0f;
   float distanceEma_ = 0.0f;
   float motionEma_ = 0.0f;
+  bool hasAcceptedTarget_ = false;
+  uint32_t lastAcceptedTargetMs_ = 0;
+  float acceptedRangeM_ = 0.0f;
+  float acceptedSpeedMps_ = 0.0f;
+  bool hasNearFieldPending_ = false;
+  uint8_t nearFieldPendingCount_ = 0;
+  float nearFieldPendingRangeM_ = 0.0f;
+  float nearFieldPendingSpeedMps_ = 0.0f;
 };

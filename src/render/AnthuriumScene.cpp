@@ -63,6 +63,7 @@ void AnthuriumScene::reset() {
   mLastNowMs = 0;
   mLastDtSec = 0.016f;
   mSmoothedCharge = 0.0f;
+  mCompressedChargeTarget = 0.0f;
   mStableCharge = 0.0f;
   mSmoothedIngressLevel = 0.0f;
   mIngressConveyorPhase = 0.0f;
@@ -109,7 +110,9 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
 
   const float dtSec = static_cast<float>(dtMs) / 1000.0f;
   mLastDtSec = dtSec;
-  const float chargeTarget = clamp01(intent.sceneChargeTarget > 0.0f ? intent.sceneChargeTarget : intent.sceneCharge);
+  const float rawChargeTarget = clamp01(intent.sceneChargeTarget > 0.0f ? intent.sceneChargeTarget : intent.sceneCharge);
+  const float chargeTarget = compressChargeTarget(rawChargeTarget);
+  mCompressedChargeTarget = chargeTarget;
   const float chargeAlpha = clamp01(BuildConfig::kAnthuriumSceneChargeSmoothingAlpha);
   mSmoothedCharge += (chargeTarget - mSmoothedCharge) * chargeAlpha;
   mSmoothedCharge = clamp01(mSmoothedCharge);
@@ -168,6 +171,22 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
   for (uint16_t i = 0; i < ringCount; ++i) {
     mTorusCharge[i] = temp[i];
   }
+}
+
+float AnthuriumScene::compressChargeTarget(float targetCharge) const {
+  const float clamped = clamp01(targetCharge);
+  const float knee = clamp01(BuildConfig::kAnthuriumChargeCompressionKnee);
+  if (clamped <= knee || knee >= 0.999f) {
+    return clamped;
+  }
+
+  const float softness = (BuildConfig::kAnthuriumChargeCompressionSoftness < 0.01f)
+                             ? 0.01f
+                             : BuildConfig::kAnthuriumChargeCompressionSoftness;
+  const float x = (clamped - knee) / (1.0f - knee);
+  const float compressed = 1.0f - expf(-x / softness);
+  const float compressedNorm = compressed / (1.0f - expf(-1.0f / softness));
+  return clamp01(knee + ((1.0f - knee) * compressedNorm));
 }
 
 float AnthuriumScene::sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenCount) const {
@@ -353,6 +372,8 @@ void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool 
     Serial.print(intent.sceneTargetRangeSmoothedM, 2);
     Serial.print(" charge_target=");
     Serial.print(intent.sceneChargeTarget, 2);
+    Serial.print(" charge_target_compressed=");
+    Serial.print(mCompressedChargeTarget, 2);
     Serial.print(" charge_smooth=");
     Serial.print(mStableCharge, 2);
     Serial.print(" torus_field=");

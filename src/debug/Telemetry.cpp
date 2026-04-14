@@ -71,6 +71,20 @@ const char* Telemetry::sampleKindName(PresenceC4001::SampleKind kind) {
   }
 }
 
+const char* Telemetry::rejectReasonName(PresenceC4001::RejectReason reason) {
+  switch (reason) {
+    case PresenceC4001::RejectReason::SpeedCap:
+      return "speed_cap";
+    case PresenceC4001::RejectReason::RangeDelta:
+      return "range_delta";
+    case PresenceC4001::RejectReason::NearFieldCoherence:
+      return "near_coherence";
+    case PresenceC4001::RejectReason::None:
+    default:
+      return "none";
+  }
+}
+
 void Telemetry::update(const LampStateMachine& stateMachine,
                        const PresenceC4001::LinkStatus& c4001LinkStatus,
                        const AmbientGateResult& ambientGate,
@@ -209,13 +223,21 @@ void Telemetry::update(const LampStateMachine& stateMachine,
       mLastRawC4001LogMs = nowMs;
       Serial.print("c4001_raw targetNumber=");
       Serial.print(c4001Rich.targetNumber);
-      Serial.print(" targetRangeM=");
+      Serial.print(" targetRangeRawM=");
+      Serial.print(c4001Rich.targetRangeRawM, 2);
+      Serial.print(" targetRangeAcceptedM=");
       Serial.print(c4001Rich.targetRangeM, 2);
-      Serial.print(" targetSpeedMps=");
+      Serial.print(" targetSpeedRawMps=");
+      Serial.print(c4001Rich.targetSpeedRawM, 2);
+      Serial.print(" targetSpeedAcceptedMps=");
       Serial.print(c4001Rich.targetSpeedMps, 2);
-      Serial.print(" sceneCharge=");
-      Serial.print(intent.sceneCharge, 2);
-      Serial.print(" sceneIngress=");
+      Serial.print(" accepted=");
+      Serial.print(c4001Rich.targetSampleAccepted ? "1" : "0");
+      Serial.print(" rejectedReason=");
+      Serial.print(rejectReasonName(static_cast<PresenceC4001::RejectReason>(c4001Rich.targetRejectedReason)));
+      Serial.print(" sceneChargeTarget=");
+      Serial.print(intent.sceneChargeTarget, 2);
+      Serial.print(" sceneIngressTarget=");
       Serial.println(intent.sceneIngressLevel, 2);
     }
 

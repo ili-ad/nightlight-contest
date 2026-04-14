@@ -30,6 +30,11 @@ void PresenceC4001::begin() {
   confidenceEma_ = 0.0f;
   distanceEma_ = 0.0f;
   motionEma_ = 0.0f;
+  hasAcceptedTarget_ = false;
+  lastAcceptedTargetMs_ = 0;
+  acceptedRangeM_ = 0.0f;
+  acceptedSpeedMps_ = 0.0f;
+  clearNearFieldCoherence();
   lastCore_ = {};
   lastRich_ = {};
 
@@ -78,8 +83,11 @@ PresenceC4001::Snapshot PresenceC4001::read() {
     linkStatus_.state = LinkState::Online;
     linkStatus_.lastSuccessMs = nowMs;
     linkStatus_.sampleKind = (rich.targetNumber > 0) ? SampleKind::Target : SampleKind::NoTarget;
+    linkStatus_.rejected = false;
+    linkStatus_.rejectReason = RejectReason::None;
 
     if (rich.targetNumber <= 0) {
+      clearNearFieldCoherence();
       return applyNoTargetSuccess(rich, nowMs);
     }
 
@@ -88,6 +96,35 @@ PresenceC4001::Snapshot PresenceC4001::read() {
     linkStatus_.lastTargetMs = nowMs;
     linkStatus_.noTargetHolding = false;
     linkStatus_.noTargetCommitted = false;
+
+    rich.targetRangeRawM = rich.targetRangeM;
+    rich.targetSpeedRawM = rich.targetSpeedMps;
+    rich.targetSampleAccepted = false;
+    rich.targetRejectedReason = static_cast<uint8_t>(RejectReason::None);
+
+    float acceptedRangeM = rich.targetRangeM;
+    float acceptedSpeedMps = rich.targetSpeedMps;
+    RejectReason rejectReason = RejectReason::None;
+    const bool accepted =
+        acceptTargetSample(rich, nowMs, acceptedRangeM, acceptedSpeedMps, rejectReason);
+    if (!accepted && hasAcceptedTarget_) {
+      acceptedRangeM = acceptedRangeM_;
+      acceptedSpeedMps = acceptedSpeedMps_;
+    }
+
+    rich.targetRangeM = acceptedRangeM;
+    rich.targetSpeedMps = acceptedSpeedMps;
+    rich.targetSampleAccepted = accepted;
+    rich.targetRejectedReason = static_cast<uint8_t>(rejectReason);
+    linkStatus_.rejected = !accepted;
+    linkStatus_.rejectReason = rejectReason;
+
+    if (accepted) {
+      hasAcceptedTarget_ = true;
+      lastAcceptedTargetMs_ = nowMs;
+      acceptedRangeM_ = acceptedRangeM;
+      acceptedSpeedMps_ = acceptedSpeedMps;
+    }
 
     CorePresence core = buildCoreFromRich(rich, nowMs);
     lastRich_ = rich;
@@ -246,6 +283,8 @@ PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
   linkStatus_.lastFailureMs = nowMs;
   linkStatus_.lastSampleMs = nowMs;
   linkStatus_.sampleKind = SampleKind::ReadFailure;
+  linkStatus_.rejected = false;
+  linkStatus_.rejectReason = RejectReason::None;
   linkStatus_.noTargetHolding = false;
   linkStatus_.noTargetCommitted = false;
   linkStatus_.online =
@@ -300,4 +339,81 @@ PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
 
   lastCore_ = held;
   return {held, lastRich_};
+}
+
+bool PresenceC4001::acceptTargetSample(const C4001PresenceRich& rawRich,
+                                       uint32_t nowMs,
+                                       float& acceptedRangeM,
+                                       float& acceptedSpeedMps,
+                                       RejectReason& reason) {
+  reason = RejectReason::None;
+  acceptedRangeM = rawRich.targetRangeM;
+  acceptedSpeedMps = rawRich.targetSpeedMps;
+
+  if (rawRich.targetRangeM <= 0.01f) {
+    reason = RejectReason::RangeDelta;
+    return false;
+  }
+
+  if (fabsf(rawRich.targetSpeedMps) > BuildConfig::kC4001MaxAcceptedSpeedMps) {
+    reason = RejectReason::SpeedCap;
+    return false;
+  }
+
+  if (hasAcceptedTarget_) {
+    const uint32_t dtMs = (lastAcceptedTargetMs_ == 0) ? BuildConfig::kC4001PollIntervalMs
+                                                       : (nowMs - lastAcceptedTargetMs_);
+    const float dtSec = static_cast<float>((dtMs == 0) ? 1 : dtMs) / 1000.0f;
+    const float maxDelta = BuildConfig::kC4001MaxAcceptedRangeDeltaPerSecond * dtSec;
+    const float delta = fabsf(rawRich.targetRangeM - acceptedRangeM_);
+    if (delta > maxDelta) {
+      reason = RejectReason::RangeDelta;
+      return false;
+    }
+  }
+
+  const bool nearField = (rawRich.targetRangeM <= BuildConfig::kC4001NearFieldStartM);
+  if (!nearField) {
+    clearNearFieldCoherence();
+    return true;
+  }
+
+  if (!hasAcceptedTarget_) {
+    return true;
+  }
+
+  const float nearDelta = fabsf(rawRich.targetRangeM - acceptedRangeM_);
+  if (nearDelta <= BuildConfig::kC4001NearFieldStrongSwingM) {
+    clearNearFieldCoherence();
+    return true;
+  }
+
+  if (hasNearFieldPending_ &&
+      (fabsf(rawRich.targetRangeM - nearFieldPendingRangeM_) <= BuildConfig::kC4001NearFieldCoherenceBandM)) {
+    ++nearFieldPendingCount_;
+    nearFieldPendingRangeM_ = (nearFieldPendingRangeM_ + rawRich.targetRangeM) * 0.5f;
+    nearFieldPendingSpeedMps_ = (nearFieldPendingSpeedMps_ + rawRich.targetSpeedMps) * 0.5f;
+  } else {
+    hasNearFieldPending_ = true;
+    nearFieldPendingCount_ = 1;
+    nearFieldPendingRangeM_ = rawRich.targetRangeM;
+    nearFieldPendingSpeedMps_ = rawRich.targetSpeedMps;
+  }
+
+  if (nearFieldPendingCount_ < BuildConfig::kC4001NearFieldCoherentSamples) {
+    reason = RejectReason::NearFieldCoherence;
+    return false;
+  }
+
+  acceptedRangeM = nearFieldPendingRangeM_;
+  acceptedSpeedMps = nearFieldPendingSpeedMps_;
+  clearNearFieldCoherence();
+  return true;
+}
+
+void PresenceC4001::clearNearFieldCoherence() {
+  hasNearFieldPending_ = false;
+  nearFieldPendingCount_ = 0;
+  nearFieldPendingRangeM_ = 0.0f;
+  nearFieldPendingSpeedMps_ = 0.0f;
 }
