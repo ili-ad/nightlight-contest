@@ -1,5 +1,6 @@
 #include "RendererRgb.h"
 #include "../topology/PixelPaths.h"
+#include <math.h>
 
 namespace {
   float clamp01(float value) {
@@ -17,6 +18,18 @@ namespace {
     return static_cast<uint8_t>(clamped * 255.0f);
   }
 
+
+
+  float blobWeight(float pixelPos, float center, float width, float softness) {
+    const float halfWidth = (width < 0.01f) ? 0.01f : (width * 0.5f);
+    const float normalizedDistance = fabsf(pixelPos - center) / halfWidth;
+    if (normalizedDistance >= 1.0f) {
+      return 0.0f;
+    }
+
+    const float falloff = 1.0f - normalizedDistance;
+    return powf(falloff, softness < 1.0f ? 1.0f : softness);
+  }
   void hsvToRgb(float hue, float saturation, float value, uint8_t& r, uint8_t& g, uint8_t& b) {
     const float s = clamp01(saturation);
     const float v = clamp01(value);
@@ -103,8 +116,24 @@ void RendererRgb::renderIntent(PixelBus& bus, const RenderIntent& intent) {
   g = static_cast<uint8_t>(g + ((255 - g) < whiteLift ? (255 - g) : whiteLift));
   b = static_cast<uint8_t>(b + ((255 - b) < whiteLift ? (255 - b) : whiteLift));
 
+  if (!intent.useLocalizedBlob || (bus.size() <= 1)) {
+    for (uint16_t i = 0; i < bus.size(); ++i) {
+      bus.setRgb(i, r, g, b);
+    }
+    return;
+  }
+
+  const float center = clamp01(intent.blobCenter);
+  const float width = clamp01(intent.blobWidth);
+  const float softness = intent.blobSoftness;
+
   for (uint16_t i = 0; i < bus.size(); ++i) {
-    bus.setRgb(i, r, g, b);
+    const float pixelPos = static_cast<float>(i) / static_cast<float>(bus.size() - 1);
+    const float weight = blobWeight(pixelPos, center, width, softness);
+    bus.setRgb(i,
+               toByte((static_cast<float>(r) / 255.0f) * weight),
+               toByte((static_cast<float>(g) / 255.0f) * weight),
+               toByte((static_cast<float>(b) / 255.0f) * weight));
   }
 }
 
