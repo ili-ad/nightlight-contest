@@ -93,6 +93,24 @@ namespace BuildConfig {
   constexpr float kPresenceExitThreshold = 0.08f;
 
   // ---------------------------------------------------------------------------
+  // C4001 resilience / connector-burp tolerance
+  // ---------------------------------------------------------------------------
+  // Tuning policy:
+  // - Hold briefly across connector burps.
+  // - Decay confidence + hints gently while disconnected.
+  // - Drop to sane empty state after sustained dropout.
+  constexpr uint8_t kC4001MaxConsecutiveFailuresForOnline = 2;
+  constexpr uint32_t kC4001DropoutHoldMs = 450;
+  constexpr float kC4001ConfidenceDecayPerFailure = 0.18f;
+  constexpr float kC4001DistanceDecayPerFailure = 0.12f;
+  constexpr float kC4001MotionDecayPerFailure = 0.18f;
+  constexpr uint32_t kC4001DropoutForceEmptyMs = 1400;
+
+  constexpr float kC4001ConfidenceEmaAlpha = 0.30f;
+  constexpr float kC4001DistanceEmaAlpha = 0.35f;
+  constexpr float kC4001MotionEmaAlpha = 0.35f;
+
+  // ---------------------------------------------------------------------------
   // Brightness ranges
   // ---------------------------------------------------------------------------
   constexpr float kGlobalBrightnessLimit = 0.20f;

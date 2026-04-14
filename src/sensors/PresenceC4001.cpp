@@ -14,16 +14,8 @@
 #endif
 
 namespace {
-  constexpr uint8_t kMaxConsecutiveFailuresForOnline = 2;
-  constexpr uint32_t kDropoutHoldMs = 450;
-  constexpr float kConfidenceDecayPerFailure = 0.22f;
-
   constexpr float kAssumedUsefulRangeM = 6.0f;
   constexpr float kMotionSpeedScaleMps = 1.2f;
-
-  constexpr float kConfidenceEmaAlpha = 0.30f;
-  constexpr float kDistanceEmaAlpha = 0.35f;
-  constexpr float kMotionEmaAlpha = 0.35f;
 
   float ema(float prev, float input, float alpha) {
     return prev + ((input - prev) * alpha);
@@ -43,7 +35,7 @@ namespace {
 
 void PresenceC4001::begin() {
   initialized_ = true;
-  consecutiveFailures_ = 0;
+  linkStatus_ = {};
   confidenceEma_ = 0.0f;
   distanceEma_ = 0.0f;
   motionEma_ = 0.0f;
@@ -51,8 +43,15 @@ void PresenceC4001::begin() {
   lastRich_ = {};
 
   Wire.begin();
-  online_ = initSensor();
-  lastCore_.online = online_;
+  const bool online = initSensor();
+  linkStatus_.state = online ? LinkState::Online : LinkState::Offline;
+  linkStatus_.online = online;
+  linkStatus_.holding = false;
+  linkStatus_.consecutiveFailures = 0;
+  linkStatus_.lastSuccessMs = online ? millis() : 0;
+  linkStatus_.lastFailureMs = 0;
+
+  lastCore_.online = online;
   lastCore_.timestampMs = millis();
 }
 
@@ -65,8 +64,11 @@ PresenceC4001::Snapshot PresenceC4001::read() {
 
   C4001PresenceRich rich{};
   if (readSensorRich(rich)) {
-    consecutiveFailures_ = 0;
-    online_ = true;
+    linkStatus_.consecutiveFailures = 0;
+    linkStatus_.online = true;
+    linkStatus_.holding = false;
+    linkStatus_.state = LinkState::Online;
+    linkStatus_.lastSuccessMs = nowMs;
 
     CorePresence core = buildCoreFromRich(rich, nowMs);
     lastRich_ = rich;
@@ -79,6 +81,10 @@ PresenceC4001::Snapshot PresenceC4001::read() {
 
 const C4001PresenceRich& PresenceC4001::lastRich() const {
   return lastRich_;
+}
+
+const PresenceC4001::LinkStatus& PresenceC4001::linkStatus() const {
+  return linkStatus_;
 }
 
 bool PresenceC4001::initSensor() {
@@ -115,7 +121,11 @@ float PresenceC4001::clamp01(float value) {
   return value;
 }
 
-CorePresence PresenceC4001::buildCoreFromRich(const C4001PresenceRich& rich, uint32_t nowMs) const {
+float PresenceC4001::decayTowardZero(float value, float decayPerFailure) {
+  return clamp01(value * (1.0f - decayPerFailure));
+}
+
+CorePresence PresenceC4001::buildCoreFromRich(const C4001PresenceRich& rich, uint32_t nowMs) {
   CorePresence core{};
 
   const bool targetSeen = (rich.targetNumber > 0);
@@ -125,28 +135,43 @@ CorePresence PresenceC4001::buildCoreFromRich(const C4001PresenceRich& rich, uin
 
   const float baseConfidence = targetSeen ? (0.55f + (0.30f * distanceNearness) + (0.15f * motion)) : 0.0f;
 
+  confidenceEma_ = ema(confidenceEma_, clamp01(baseConfidence), BuildConfig::kC4001ConfidenceEmaAlpha);
+  distanceEma_ = ema(distanceEma_, distanceNearness, BuildConfig::kC4001DistanceEmaAlpha);
+  motionEma_ = ema(motionEma_, motion, BuildConfig::kC4001MotionEmaAlpha);
+
   core.online = true;
   core.present = targetSeen;
-  core.presenceConfidence = ema(confidenceEma_, clamp01(baseConfidence), kConfidenceEmaAlpha);
-  core.distanceHint = ema(distanceEma_, distanceNearness, kDistanceEmaAlpha);
-  core.motionHint = ema(motionEma_, motion, kMotionEmaAlpha);
+  core.presenceConfidence = confidenceEma_;
+  core.distanceHint = distanceEma_;
+  core.motionHint = motionEma_;
   core.timestampMs = nowMs;
 
   return core;
 }
 
 PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
-  ++consecutiveFailures_;
-  online_ = (consecutiveFailures_ <= kMaxConsecutiveFailuresForOnline);
+  ++linkStatus_.consecutiveFailures;
+  linkStatus_.lastFailureMs = nowMs;
+  linkStatus_.online =
+      (linkStatus_.consecutiveFailures <= BuildConfig::kC4001MaxConsecutiveFailuresForOnline);
 
   CorePresence held = lastCore_;
-  const bool withinHold = (nowMs - held.timestampMs) <= kDropoutHoldMs;
+  const uint32_t msSinceSuccess =
+      (linkStatus_.lastSuccessMs == 0) ? 0xFFFFFFFFu : (nowMs - linkStatus_.lastSuccessMs);
+  const bool withinHold = (msSinceSuccess <= BuildConfig::kC4001DropoutHoldMs);
+  const bool forceEmpty = (msSinceSuccess >= BuildConfig::kC4001DropoutForceEmptyMs);
+  linkStatus_.holding = withinHold;
+  linkStatus_.state = linkStatus_.online ? (withinHold ? LinkState::DegradedHold : LinkState::Online)
+                                         : LinkState::Offline;
 
   if (withinHold) {
-    held.online = online_;
+    held.online = linkStatus_.online;
     held.timestampMs = nowMs;
-    held.presenceConfidence = clamp01(held.presenceConfidence * (1.0f - kConfidenceDecayPerFailure));
-    if (held.presenceConfidence < BuildConfig::kPresenceExitThreshold) {
+    held.presenceConfidence = decayTowardZero(held.presenceConfidence, BuildConfig::kC4001ConfidenceDecayPerFailure);
+    held.distanceHint = decayTowardZero(held.distanceHint, BuildConfig::kC4001DistanceDecayPerFailure);
+    held.motionHint = decayTowardZero(held.motionHint, BuildConfig::kC4001MotionDecayPerFailure);
+
+    if (held.presenceConfidence <= BuildConfig::kPresenceExitThreshold) {
       held.present = false;
     }
     lastCore_ = held;
@@ -156,16 +181,26 @@ PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
     return {held, lastRich_};
   }
 
-  held.online = online_;
-  held.present = false;
-  held.presenceConfidence = 0.0f;
-  held.distanceHint = 0.0f;
-  held.motionHint = 0.0f;
+  held.online = linkStatus_.online;
+  held.presenceConfidence = decayTowardZero(held.presenceConfidence, BuildConfig::kC4001ConfidenceDecayPerFailure);
+  held.distanceHint = decayTowardZero(held.distanceHint, BuildConfig::kC4001DistanceDecayPerFailure);
+  held.motionHint = decayTowardZero(held.motionHint, BuildConfig::kC4001MotionDecayPerFailure);
+  held.present = (held.presenceConfidence > BuildConfig::kPresenceExitThreshold);
   held.timestampMs = nowMs;
 
-  confidenceEma_ = 0.0f;
-  distanceEma_ = 0.0f;
-  motionEma_ = 0.0f;
+  if (forceEmpty) {
+    held.present = false;
+    held.online = false;
+    held.presenceConfidence = 0.0f;
+    held.distanceHint = 0.0f;
+    held.motionHint = 0.0f;
+    linkStatus_.holding = false;
+    linkStatus_.state = LinkState::Offline;
+  }
+
+  confidenceEma_ = held.presenceConfidence;
+  distanceEma_ = held.distanceHint;
+  motionEma_ = held.motionHint;
 
   lastCore_ = held;
   return {held, lastRich_};

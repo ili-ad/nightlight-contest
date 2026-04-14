@@ -153,5 +153,5 @@ void App::loop() {
 
   renderFrame(context, intent);
   gPixelBus.show();
-  gTelemetry.update(gStateMachine);
+  gTelemetry.update(gStateMachine, gPresenceManager.c4001LinkStatus());
 }
