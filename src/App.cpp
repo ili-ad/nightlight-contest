@@ -8,6 +8,7 @@
 #include "effects/InterludeEffects.h"
 #include "mapping/MapperShared.h"
 #include "mapping/RenderIntent.h"
+#include "processing/AmbientGate.h"
 #include "render/PixelBus.h"
 #include "render/RendererRgb.h"
 #include "render/RendererRgbw.h"
@@ -21,6 +22,7 @@ static RendererRgb gRendererRgb;
 static RendererRgbw gRendererRgbw;
 static MapperShared gMapper;
 static AmbientBh1750 gAmbientSensor;
+static AmbientGate gAmbientGate;
 static PresenceManager gPresenceManager;
 
 namespace {
@@ -40,7 +42,7 @@ namespace {
       inputs.ambientLux = ambient.luxRaw;
     }
 
-    inputs.darkAllowed = (inputs.ambientLux < BuildConfig::kDarkEnterLux);
+    inputs.darkAllowed = gAmbientGate.update(inputs.ambientLux).darkAllowed;
     inputs.presence = gPresenceManager.readCore();
 
     const DebugInputSample sim = DebugModes::sample(millis());
