@@ -14,6 +14,7 @@ constexpr uint8_t brightnessFromLimit(float limit) {
   return static_cast<uint8_t>(limit * 255.0f + 0.5f);
 }
 
+// Bench-proven strip format: GRBW pixels at 800KHz (Nano Every + Adafruit NeoPixel).
 Adafruit_NeoPixel gStrip(
     BuildConfig::kTotalPixels,
     Pins::kLedData,

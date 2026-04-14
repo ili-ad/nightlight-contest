@@ -19,15 +19,26 @@ enum class DebugInputMode : uint8_t {
 
 namespace BuildConfig {
   // ---------------------------------------------------------------------------
+  // Bench-proven hardware profile (Arduino Nano Every)
+  // ---------------------------------------------------------------------------
+  // LED backend is Adafruit NeoPixel on D6. See PixelBus for strip order
+  // (NEO_GRBW + NEO_KHZ800).
+  // I2C bus is the Nano Every hardware bus: A4=SDA, A5=SCL.
+  // Bench power topology: strip on external 5V, Nano on USB, and shared ground.
+  constexpr uint8_t kBh1750I2cAddress = 0x23;
+  constexpr uint8_t kC4001I2cAddress = 0x2B;
+
+  // ---------------------------------------------------------------------------
   // Hardware/backend selection
   // ---------------------------------------------------------------------------
+  // Presence backend remains None until sensor integrations land in later tickets.
   constexpr PresenceBackend kPresenceBackend = PresenceBackend::None;
   constexpr RenderBackend kRenderBackend = RenderBackend::RGBW;
 
   // ---------------------------------------------------------------------------
   // Debug simulation
   // ---------------------------------------------------------------------------
-  // Set to None when live sensor bring-up begins.
+  // Keep simulated input available as a harness until live presence paths land.
   constexpr DebugInputMode kDebugInputMode = DebugInputMode::SimulatedApproachLoop;
 
   // Major simulated loop choreography boundaries.
@@ -46,13 +57,13 @@ namespace BuildConfig {
   // ---------------------------------------------------------------------------
   // Provisional geometry and pixel counts
   // ---------------------------------------------------------------------------
-  // Pre-bench physical model (provisional). Final strip routing and assembly path
-  // can shift these counts slightly; tune here first during bench bring-up.
+  // Geometry and final strip routing are still provisional; tune these as assembly
+  // details settle.
   constexpr float kRingDiameterMm = 100.0f;
   constexpr float kStamenLengthMm = 110.0f;
   constexpr float kLedPitchMm = 6.94f;
 
-  // Provisional pre-bench pixel allocation.
+  // Pixel allocation is still provisional pending final physical routing.
   constexpr uint16_t kRingPixels = 45;
   constexpr uint16_t kLeftStamenPixels = 16;
   constexpr uint16_t kRightStamenPixels = 16;
