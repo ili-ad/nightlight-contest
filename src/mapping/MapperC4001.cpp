@@ -41,7 +41,9 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     RenderIntent intent = mShared.mapActiveBaseline(context);
     intent.sceneNowMs = context.nowMs;
 
-    const bool targetValid = (rich.targetNumber > 0) && (rich.targetRangeM > 0.01f);
+    const bool targetValid = rich.targetSampleAccepted &&
+                             (rich.targetNumber > 0) &&
+                             (rich.targetRangeM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
     if (targetValid) {
       mHasHeldTarget = true;
       mHeldAtMs = context.nowMs;

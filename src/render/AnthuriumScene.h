@@ -17,6 +17,7 @@ private:
   float mLastDtSec = 0.016f;
   float mSmoothedCharge = 0.0f;
   float mCompressedChargeTarget = 0.0f;
+  float mClampedChargeTarget = 0.0f;
   float mStableCharge = 0.0f;
   float mSmoothedIngressLevel = 0.0f;
   float mIngressConveyorPhase = 0.0f;
@@ -34,4 +35,5 @@ private:
   float applyBrightnessSlew(float previous, float target, float dtSec) const;
   float applyDeadband(float previous, float target, float threshold) const;
   float compressChargeTarget(float targetCharge) const;
+  float clampChargeTargetDelta(float previous, float target) const;
 };

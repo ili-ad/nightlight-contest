@@ -63,6 +63,7 @@ void AnthuriumScene::reset() {
   mLastDtSec = 0.016f;
   mSmoothedCharge = 0.0f;
   mCompressedChargeTarget = 0.0f;
+  mClampedChargeTarget = 0.0f;
   mStableCharge = 0.0f;
   mSmoothedIngressLevel = 0.0f;
   mIngressConveyorPhase = 0.0f;
@@ -109,8 +110,10 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
   const float dtSec = static_cast<float>(dtMs) / 1000.0f;
   mLastDtSec = dtSec;
   const float rawChargeTarget = clamp01(intent.sceneChargeTarget > 0.0f ? intent.sceneChargeTarget : intent.sceneCharge);
-  const float chargeTarget = compressChargeTarget(rawChargeTarget);
-  mCompressedChargeTarget = chargeTarget;
+  const float compressedChargeTarget = compressChargeTarget(rawChargeTarget);
+  const float chargeTarget = clampChargeTargetDelta(mClampedChargeTarget, compressedChargeTarget);
+  mCompressedChargeTarget = compressedChargeTarget;
+  mClampedChargeTarget = chargeTarget;
   const float chargeAlpha = clamp01(BuildConfig::kAnthuriumSceneChargeSmoothingAlpha);
   mSmoothedCharge += (chargeTarget - mSmoothedCharge) * chargeAlpha;
   mSmoothedCharge = clamp01(mSmoothedCharge);
@@ -178,13 +181,25 @@ float AnthuriumScene::compressChargeTarget(float targetCharge) const {
     return clamped;
   }
 
-  const float softness = (BuildConfig::kAnthuriumChargeCompressionSoftness < 0.01f)
-                             ? 0.01f
+  const float softness = (BuildConfig::kAnthuriumChargeCompressionSoftness < 0.05f)
+                             ? 0.05f
                              : BuildConfig::kAnthuriumChargeCompressionSoftness;
   const float x = (clamped - knee) / (1.0f - knee);
-  const float compressed = 1.0f - expf(-x / softness);
-  const float compressedNorm = compressed / (1.0f - expf(-1.0f / softness));
-  return clamp01(knee + ((1.0f - knee) * compressedNorm));
+  const float powered = powf(x, 1.0f + softness);
+  return clamp01(knee + ((1.0f - knee) * powered));
+}
+
+float AnthuriumScene::clampChargeTargetDelta(float previous, float target) const {
+  const float maxDelta = (BuildConfig::kAnthuriumChargeTargetMaxDeltaPerUpdate < 0.001f)
+                             ? 0.001f
+                             : BuildConfig::kAnthuriumChargeTargetMaxDeltaPerUpdate;
+  if (target > previous + maxDelta) {
+    return previous + maxDelta;
+  }
+  if (target < previous - maxDelta) {
+    return previous - maxDelta;
+  }
+  return target;
 }
 
 float AnthuriumScene::sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenCount) const {
