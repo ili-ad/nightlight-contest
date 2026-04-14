@@ -60,14 +60,20 @@ namespace {
 void AnthuriumScene::reset() {
   mInitialized = false;
   mLastNowMs = 0;
-  mIngressEmitAccumulatorMs = 0;
-
-  for (uint8_t i = 0; i < kMaxIngressPulses; ++i) {
-    mIngressPulses[i] = IngressPulse();
-  }
+  mLastDtSec = 0.016f;
+  mSmoothedCharge = 0.0f;
+  mSmoothedIngressLevel = 0.0f;
+  mIngressConveyorPhase = 0.0f;
 
   for (uint16_t i = 0; i < BuildConfig::kRingPixels; ++i) {
     mTorusCharge[i] = 0.0f;
+    mRingBrightness[i] = 0.0f;
+  }
+  for (uint16_t i = 0; i < BuildConfig::kLeftStamenPixels; ++i) {
+    mLeftBrightness[i] = 0.0f;
+  }
+  for (uint16_t i = 0; i < BuildConfig::kRightStamenPixels; ++i) {
+    mRightBrightness[i] = 0.0f;
   }
 }
 
@@ -79,31 +85,6 @@ void AnthuriumScene::renderRgb(PixelBus& bus, const RenderIntent& intent) {
 void AnthuriumScene::renderRgbw(PixelBus& bus, const RenderIntent& intent) {
   updateDynamics(intent);
   writeFrame(bus, intent, true);
-}
-
-void AnthuriumScene::emitIngressPulse(float pulseAmplitude) {
-  uint8_t slot = kMaxIngressPulses;
-  for (uint8_t i = 0; i < kMaxIngressPulses; ++i) {
-    if (!mIngressPulses[i].active) {
-      slot = i;
-      break;
-    }
-  }
-
-  if (slot == kMaxIngressPulses) {
-    float weakest = mIngressPulses[0].amplitude;
-    slot = 0;
-    for (uint8_t i = 1; i < kMaxIngressPulses; ++i) {
-      if (mIngressPulses[i].amplitude < weakest) {
-        weakest = mIngressPulses[i].amplitude;
-        slot = i;
-      }
-    }
-  }
-
-  mIngressPulses[slot].active = true;
-  mIngressPulses[slot].progress = 0.0f;
-  mIngressPulses[slot].amplitude = clamp01(pulseAmplitude);
 }
 
 void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
@@ -124,33 +105,30 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
   mLastNowMs = intent.sceneNowMs;
 
   const float dtSec = static_cast<float>(dtMs) / 1000.0f;
+  mLastDtSec = dtSec;
+  const float chargeRiseSec = static_cast<float>(BuildConfig::kAnthuriumChargeRiseTauMs) / 1000.0f;
+  const float chargeFallSec = static_cast<float>(BuildConfig::kAnthuriumChargeFallTauMs) / 1000.0f;
+  const float chargeTarget = clamp01(intent.sceneCharge);
+  const float chargeTau = (chargeTarget >= mSmoothedCharge) ? chargeRiseSec : chargeFallSec;
+  const float chargeAlpha = (chargeTau > 0.001f) ? (1.0f - expf(-dtSec / chargeTau)) : 1.0f;
+  mSmoothedCharge += (chargeTarget - mSmoothedCharge) * chargeAlpha;
+  mSmoothedCharge = clamp01(mSmoothedCharge);
 
-  if (dtMs > 0) {
-    mIngressEmitAccumulatorMs += dtMs;
-    const uint32_t emitPeriodMs = BuildConfig::kAnthuriumIngressEmitPeriodMs;
-    while (mIngressEmitAccumulatorMs >= emitPeriodMs) {
-      mIngressEmitAccumulatorMs -= emitPeriodMs;
-      const float pulseAmplitude = intent.sceneCharge *
-                                   (static_cast<float>(emitPeriodMs) / 1000.0f) *
-                                   BuildConfig::kAnthuriumIngressPulseGain;
-      emitIngressPulse(pulseAmplitude);
-    }
-  }
+  const float ingressTarget = clamp01(intent.sceneIngressLevel * (0.30f + (0.70f * mSmoothedCharge)));
+  const float ingressAlpha = (BuildConfig::kAnthuriumIngressSmoothingSec > 0.001f)
+                                 ? (1.0f - expf(-dtSec / BuildConfig::kAnthuriumIngressSmoothingSec))
+                                 : 1.0f;
+  mSmoothedIngressLevel += (ingressTarget - mSmoothedIngressLevel) * ingressAlpha;
+  mSmoothedIngressLevel = clamp01(mSmoothedIngressLevel);
 
-  float torusInput = 0.0f;
   const float travelSec = BuildConfig::kAnthuriumIngressTravelMs / 1000.0f;
-  const float progressStep = (travelSec > 0.01f) ? (dtSec / travelSec) : 1.0f;
-
-  for (uint8_t i = 0; i < kMaxIngressPulses; ++i) {
-    if (!mIngressPulses[i].active) {
-      continue;
+  if (travelSec > 0.01f) {
+    mIngressConveyorPhase += dtSec / travelSec;
+    while (mIngressConveyorPhase >= 1.0f) {
+      mIngressConveyorPhase -= 1.0f;
     }
-
-    mIngressPulses[i].progress += progressStep;
-    if (mIngressPulses[i].progress >= 1.0f) {
-      torusInput += mIngressPulses[i].amplitude * BuildConfig::kAnthuriumTorusAccumulationGain;
-      mIngressPulses[i] = IngressPulse();
-    }
+  } else {
+    mIngressConveyorPhase = 0.0f;
   }
 
   float temp[BuildConfig::kRingPixels] = {0.0f};
@@ -170,6 +148,9 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
   const uint16_t ingressA = BuildConfig::kAnthuriumTorusIngressA % ringCount;
   const uint16_t ingressB = BuildConfig::kAnthuriumTorusIngressB % ringCount;
   const float spread = BuildConfig::kAnthuriumTorusIngressSpread;
+  const float torusInput = clamp01(mSmoothedCharge * BuildConfig::kAnthuriumDistanceToChargeGain) * dtSec *
+                           BuildConfig::kAnthuriumTorusAccumulationGain *
+                           BuildConfig::kAnthuriumContinuousInjectionGain;
 
   for (uint16_t i = 0; i < ringCount; ++i) {
     const float distA = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(ingressA)));
@@ -192,21 +173,18 @@ float AnthuriumScene::sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenC
     return 0.0f;
   }
 
-  const float stamenPos = static_cast<float>(stamenPixel) / static_cast<float>(stamenCount - 1);
+  const float denom = (stamenCount > 1) ? static_cast<float>(stamenCount - 1) : 1.0f;
+  const float stamenPos = static_cast<float>(stamenPixel) / denom;
   const float tipToEntry = 1.0f - stamenPos;
-  float signal = 0.0f;
-
-  for (uint8_t i = 0; i < kMaxIngressPulses; ++i) {
-    if (!mIngressPulses[i].active) {
-      continue;
-    }
-
-    const float delta = tipToEntry - mIngressPulses[i].progress;
-    const float width = BuildConfig::kAnthuriumIngressPulseWidth;
-    signal += mIngressPulses[i].amplitude * expf(-(delta * delta) / (2.0f * width * width));
+  float delta = fabsf(tipToEntry - mIngressConveyorPhase);
+  if (delta > 0.5f) {
+    delta = 1.0f - delta;
   }
 
-  return clamp01(signal);
+  const float width = BuildConfig::kAnthuriumIngressConveyorWidth;
+  const float moving = expf(-(delta * delta) / (2.0f * width * width));
+  const float floor = mSmoothedCharge * BuildConfig::kAnthuriumIngressFloorFromCharge;
+  return clamp01(floor + (moving * mSmoothedIngressLevel));
 }
 
 float AnthuriumScene::sampleTorusField(uint16_t ringPixel, uint16_t ringCount) const {
@@ -219,7 +197,19 @@ float AnthuriumScene::sampleTorusField(uint16_t ringPixel, uint16_t ringCount) c
   return clamp01(base + memory);
 }
 
+float AnthuriumScene::applyBrightnessSlew(float previous, float target, float dtSec) const {
+  const float maxStep = BuildConfig::kAnthuriumMaxBrightnessDeltaPerSecond * dtSec;
+  if (target > previous + maxStep) {
+    return previous + maxStep;
+  }
+  if (target < previous - maxStep) {
+    return previous - maxStep;
+  }
+  return target;
+}
+
 void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool useWhite) {
+  const float dtSec = (mLastDtSec > 0.0001f) ? mLastDtSec : 0.016f;
   uint8_t r = 0;
   uint8_t g = 0;
   uint8_t b = 0;
@@ -232,8 +222,10 @@ void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool 
   for (uint16_t i = 0; i < ring.count; ++i) {
     const uint16_t px = ring.start + i;
     const float field = sampleTorusField(i, ring.count);
-    const float brightness = clamp01((field * intent.sceneFieldLevel) +
-                                     (intent.sceneCharge * BuildConfig::kAnthuriumTorusInstantGain));
+    const float targetBrightness = clamp01((field * intent.sceneFieldLevel) +
+                                           (mSmoothedCharge * BuildConfig::kAnthuriumTorusInstantGain));
+    mRingBrightness[i] = applyBrightnessSlew(mRingBrightness[i], targetBrightness, dtSec);
+    const float brightness = mRingBrightness[i];
 
     const float white = clamp01((intent.whiteLevel + intent.sceneEnergyBoost) * field);
 
@@ -258,8 +250,11 @@ void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool 
   for (uint16_t i = 0; i < left.count; ++i) {
     const uint16_t px = left.start + i;
     const float ingress = sampleStamenIngress(i, left.count);
-    const float brightness = clamp01((ingress * intent.sceneIngressLevel) +
-                                     (BuildConfig::kAnthuriumStamenAmbientFloor * intent.sceneFieldLevel));
+    const float targetBrightness =
+        clamp01((ingress * intent.sceneIngressLevel) +
+                (BuildConfig::kAnthuriumStamenAmbientFloor * intent.sceneFieldLevel));
+    mLeftBrightness[i] = applyBrightnessSlew(mLeftBrightness[i], targetBrightness, dtSec);
+    const float brightness = mLeftBrightness[i];
     const float white = clamp01((intent.whiteLevel + intent.sceneEnergyBoost) * ingress);
 
     if (useWhite) {
@@ -283,8 +278,11 @@ void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool 
   for (uint16_t i = 0; i < right.count; ++i) {
     const uint16_t px = right.start + i;
     const float ingress = sampleStamenIngress(i, right.count);
-    const float brightness = clamp01((ingress * intent.sceneIngressLevel) +
-                                     (BuildConfig::kAnthuriumStamenAmbientFloor * intent.sceneFieldLevel));
+    const float targetBrightness =
+        clamp01((ingress * intent.sceneIngressLevel) +
+                (BuildConfig::kAnthuriumStamenAmbientFloor * intent.sceneFieldLevel));
+    mRightBrightness[i] = applyBrightnessSlew(mRightBrightness[i], targetBrightness, dtSec);
+    const float brightness = mRightBrightness[i];
     const float white = clamp01((intent.whiteLevel + intent.sceneEnergyBoost) * ingress);
 
     if (useWhite) {

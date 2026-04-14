@@ -184,13 +184,18 @@ namespace BuildConfig {
   constexpr float kAnthuriumTorusInstantGain = 0.08f;
   constexpr float kAnthuriumTorusBaseFieldLevel = 0.06f;
   constexpr float kAnthuriumTorusDiffusionPerSecond = 0.34f;
-  constexpr uint32_t kAnthuriumIngressEmitPeriodMs = 120;
-  constexpr float kAnthuriumIngressPulseGain = 0.85f;
-  constexpr float kAnthuriumIngressPulseWidth = 0.13f;
+  constexpr float kAnthuriumContinuousInjectionGain = 1.0f;
+  constexpr uint32_t kAnthuriumChargeRiseTauMs = 260;
+  constexpr uint32_t kAnthuriumChargeFallTauMs = 520;
+  constexpr float kAnthuriumIngressSmoothingSec = 0.28f;
+  constexpr float kAnthuriumIngressConveyorWidth = 0.22f;
+  constexpr float kAnthuriumIngressFloorFromCharge = 0.42f;
+  constexpr float kAnthuriumMaxBrightnessDeltaPerSecond = 2.10f;
   constexpr float kAnthuriumStamenAmbientFloor = 0.05f;
   constexpr uint16_t kAnthuriumTorusIngressA = 2;
   constexpr uint16_t kAnthuriumTorusIngressB = (kRingPixels / 2) + 2;
   constexpr float kAnthuriumTorusIngressSpread = 3.5f;
+  constexpr uint32_t kTelemetryC4001RawLogIntervalMs = 400;
 
   // ---------------------------------------------------------------------------
   // RenderIntent smoothing policy (non-procedural states)
