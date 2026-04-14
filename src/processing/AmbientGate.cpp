@@ -11,7 +11,10 @@ void AmbientGate::clearPending() {
   pendingRequiredMs_ = 0;
 }
 
-AmbientGateResult AmbientGate::update(float lux) {
+AmbientGateResult AmbientGate::update(float lux,
+                                      LampState lampState,
+                                      float presenceConfidence,
+                                      bool presenceDetected) {
   const uint32_t nowMs = millis();
 
   if (!smoothingReady_) {
@@ -40,6 +43,16 @@ AmbientGateResult AmbientGate::update(float lux) {
       (darkAllowed_ ? BuildConfig::kAmbientNightSelfLightExitMarginLux : 0.0f);
   const bool candidateToDay = darkAllowed_ && (gateLux_ >= dayExitLux);
 
+  const bool activeNightState =
+      (lampState == LampState::ActiveInterpretive) || (lampState == LampState::Decay);
+  const bool strongPresence =
+      presenceDetected ||
+      (presenceConfidence >= BuildConfig::kAmbientActiveModeSuppressMinPresenceConfidence);
+  const bool escapeBrightnessOverride =
+      gateLux_ >= BuildConfig::kAmbientActiveModeSuppressBrightOverrideLux;
+  const bool suppressDayExitByActive =
+      candidateToDay && activeNightState && strongPresence && !escapeBrightnessOverride;
+
   bool wantsTransition = false;
   bool targetToDark = false;
   uint32_t requiredDwellMs = 0;
@@ -53,6 +66,9 @@ AmbientGateResult AmbientGate::update(float lux) {
     requiredDwellMs = BuildConfig::kAmbientExitDwellMs;
     if (darkAllowed_) {
       requiredDwellMs += BuildConfig::kAmbientNightSelfLightExtraExitDwellMs;
+    }
+    if (suppressDayExitByActive) {
+      requiredDwellMs += BuildConfig::kAmbientActiveModeSuppressExtraExitDwellMs;
     }
   }
 
@@ -89,5 +105,6 @@ AmbientGateResult AmbientGate::update(float lux) {
   result.pendingElapsedMs = pendingActive_ ? (nowMs - pendingSinceMs_) : 0;
   result.pendingRequiredMs = pendingActive_ ? pendingRequiredMs_ : 0;
   result.holdRemainingMs = pendingActive_ ? holdRemainingMs : 0;
+  result.dayExitSuppressedByActive = suppressDayExitByActive;
   return result;
 }

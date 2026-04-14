@@ -1,6 +1,8 @@
 #pragma once
 #include <stdint.h>
 
+#include "../behavior/LampState.h"
+
 struct AmbientGateResult {
   bool darkAllowed = false;
   float rawLux = 0.0f;
@@ -12,11 +14,15 @@ struct AmbientGateResult {
   uint32_t pendingElapsedMs = 0;
   uint32_t pendingRequiredMs = 0;
   uint32_t holdRemainingMs = 0;
+  bool dayExitSuppressedByActive = false;
 };
 
 class AmbientGate {
 public:
-  AmbientGateResult update(float lux);
+  AmbientGateResult update(float lux,
+                           LampState lampState,
+                           float presenceConfidence,
+                           bool presenceDetected);
 
 private:
   void clearPending();

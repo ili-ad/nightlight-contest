@@ -38,6 +38,7 @@ void Telemetry::begin() {
   mHadAmbientPending = false;
   mLastAmbientWaitingOnHold = false;
   mLastAmbientPendingToDark = false;
+  mLastAmbientSuppressed = false;
 }
 
 const char* Telemetry::linkStateName(PresenceC4001::LinkState state) {
@@ -75,7 +76,10 @@ void Telemetry::update(const LampStateMachine& stateMachine,
       ambientPendingNow &&
       ((mLastAmbientWaitingOnHold != ambientGate.waitingOnHold) ||
        (mLastAmbientPendingToDark != ambientGate.pendingToDark));
-  const bool shouldLogAmbient = ambientGate.transitionCommitted || ambientPendingChanged || ambientPendingModeChanged;
+  const bool ambientSuppressionChanged =
+      (mLastAmbientSuppressed != ambientGate.dayExitSuppressedByActive);
+  const bool shouldLogAmbient = ambientGate.transitionCommitted || ambientPendingChanged ||
+                                ambientPendingModeChanged || ambientSuppressionChanged;
 
   if (!stateChanged && !linkChanged && !shouldLogPresence && !shouldLogAmbient) {
     return;
@@ -92,6 +96,12 @@ void Telemetry::update(const LampStateMachine& stateMachine,
     if (ambientGate.transitionCommitted) {
       Serial.print(" event=commit to=");
       Serial.println(ambientGate.darkAllowed ? "night" : "day");
+    } else if (ambientGate.dayExitSuppressedByActive && !ambientGate.pendingToDark &&
+               (ambientGate.waitingOnDwell || ambientGate.waitingOnHold)) {
+      Serial.print(" event=day_suppressed_active dwell_ms=");
+      Serial.print(ambientGate.pendingElapsedMs);
+      Serial.print("/");
+      Serial.println(ambientGate.pendingRequiredMs);
     } else if (ambientGate.waitingOnHold) {
       Serial.print(" event=hold_wait to=");
       Serial.print(ambientGate.pendingToDark ? "night" : "day");
@@ -112,6 +122,7 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   mHadAmbientPending = ambientPendingNow;
   mLastAmbientWaitingOnHold = ambientGate.waitingOnHold;
   mLastAmbientPendingToDark = ambientGate.pendingToDark;
+  mLastAmbientSuppressed = ambientGate.dayExitSuppressedByActive;
 
   if (linkChanged) {
     mHasLastLinkState = true;
