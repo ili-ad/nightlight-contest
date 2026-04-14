@@ -13,6 +13,7 @@
 #include "render/PixelBus.h"
 #include "render/RendererRgb.h"
 #include "render/RendererRgbw.h"
+#include "render/RenderIntentSmoother.h"
 #include "sensors/AmbientBh1750.h"
 #include "sensors/PresenceManager.h"
 
@@ -23,6 +24,7 @@ static RendererRgb gRendererRgb;
 static RendererRgbw gRendererRgbw;
 static MapperShared gMapper;
 static MapperC4001 gMapperC4001;
+static RenderIntentSmoother gIntentSmoother;
 static AmbientBh1750 gAmbientSensor;
 static AmbientGate gAmbientGate;
 static PresenceManager gPresenceManager;
@@ -71,6 +73,21 @@ namespace {
     }
 
     return gMapper.map(context);
+  }
+
+  bool shouldSmoothIntent(LampState state) {
+    switch (state) {
+      case LampState::BootAnimation:
+      case LampState::InterludeGlitch:
+        return false;
+      case LampState::DayDormant:
+      case LampState::NightIdle:
+      case LampState::ActiveInterpretive:
+      case LampState::Decay:
+      case LampState::FaultSafe:
+      default:
+        return true;
+    }
   }
 
   void renderRgbFrame(const BehaviorContext& context, const RenderIntent& intent) {
@@ -142,6 +159,7 @@ void App::setup() {
 
   gRendererRgb.begin(gPixelBus);
   gRendererRgbw.begin(gPixelBus);
+  gIntentSmoother.reset();
 }
 
 void App::loop() {
@@ -149,9 +167,16 @@ void App::loop() {
   advanceState(inputs);
 
   const BehaviorContext& context = gStateMachine.context();
-  const RenderIntent intent = buildRenderIntent(context);
+  const RenderIntent rawIntent = buildRenderIntent(context);
 
-  renderFrame(context, intent);
+  RenderIntent finalIntent = rawIntent;
+  if (shouldSmoothIntent(context.state)) {
+    finalIntent = gIntentSmoother.smooth(rawIntent);
+  } else {
+    gIntentSmoother.reset();
+  }
+
+  renderFrame(context, finalIntent);
   gPixelBus.show();
   gTelemetry.update(gStateMachine, gPresenceManager.c4001LinkStatus());
 }

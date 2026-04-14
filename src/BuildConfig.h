@@ -164,6 +164,18 @@ namespace BuildConfig {
   constexpr float kC4001TargetEnergyRgbBoost = 0.10f;
 
   // ---------------------------------------------------------------------------
+  // RenderIntent smoothing policy (non-procedural states)
+  // ---------------------------------------------------------------------------
+  constexpr float kIntentWhiteRiseAlpha = 0.16f;
+  constexpr float kIntentWhiteFallAlpha = 0.10f;
+  constexpr float kIntentRgbRiseAlpha = 0.22f;
+  constexpr float kIntentRgbFallAlpha = 0.14f;
+  constexpr float kIntentHueAlpha = 0.16f;
+  constexpr float kIntentSaturationAlpha = 0.14f;
+  constexpr float kIntentBlobCenterAlpha = 0.24f;
+  constexpr float kIntentBlobWidthAlpha = 0.12f;
+
+  // ---------------------------------------------------------------------------
   // Ambient-light thresholds
   // ---------------------------------------------------------------------------
   constexpr float kDarkEnterLux = 8.0f;
