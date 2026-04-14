@@ -1,7 +1,32 @@
 #include "PixelBus.h"
+#include <Adafruit_NeoPixel.h>
+#include "../Pins.h"
+
+namespace {
+constexpr uint8_t brightnessFromLimit(float limit) {
+  if (limit <= 0.0f) {
+    return 0;
+  }
+  if (limit >= 1.0f) {
+    return 255;
+  }
+
+  return static_cast<uint8_t>(limit * 255.0f + 0.5f);
+}
+
+Adafruit_NeoPixel gStrip(
+    BuildConfig::kTotalPixels,
+    Pins::kLedData,
+    NEO_GRBW + NEO_KHZ800
+);
+}  // namespace
 
 void PixelBus::begin() {
   clear();
+  gStrip.begin();
+  gStrip.setBrightness(brightnessFromLimit(BuildConfig::kGlobalBrightnessLimit));
+  gStrip.clear();
+  show();
 }
 
 void PixelBus::clear() {
@@ -11,7 +36,12 @@ void PixelBus::clear() {
 }
 
 void PixelBus::show() {
-  // Hardware LED output comes later.
+  for (uint16_t i = 0; i < size(); ++i) {
+    const PixelData& pixel = mPixels[i];
+    gStrip.setPixelColor(i, gStrip.Color(pixel.r, pixel.g, pixel.b, pixel.w));
+  }
+
+  gStrip.show();
 }
 
 uint16_t PixelBus::size() const {
