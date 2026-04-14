@@ -17,6 +17,20 @@ const char* linkStateCode(PresenceC4001::LinkState state) {
       return "off";
   }
 }
+
+const char* sampleKindCode(PresenceC4001::SampleKind kind) {
+  switch (kind) {
+    case PresenceC4001::SampleKind::Target:
+      return "tg";
+    case PresenceC4001::SampleKind::NoTarget:
+      return "nt";
+    case PresenceC4001::SampleKind::ReadFailure:
+      return "rf";
+    case PresenceC4001::SampleKind::Unknown:
+    default:
+      return "uk";
+  }
+}
 #endif
 }  // namespace
 
@@ -81,7 +95,6 @@ void Telemetry::update(const LampStateMachine& stateMachine,
 
   const bool ambientSuppressionRaised =
       ambientGate.dayExitSuppressedByActive && !mLastAmbientSuppressed;
-  const bool ambientSuppressionEscaped = ambientGate.dayExitSuppressionEscaped;
   const bool ambientCommit = ambientGate.transitionCommitted;
 #endif
 
@@ -100,8 +113,6 @@ void Telemetry::update(const LampStateMachine& stateMachine,
     Serial.println(ambientGate.gateLux, 1);
   } else if (ambientSuppressionRaised) {
     Serial.println("ag sup=1");
-  } else if (ambientSuppressionEscaped) {
-    Serial.println("ag sup=0");
   }
 
   mLastAmbientSuppressed = ambientGate.dayExitSuppressedByActive;
@@ -129,19 +140,23 @@ void Telemetry::update(const LampStateMachine& stateMachine,
     mLastS27LogMs = nowMs;
     const uint8_t rejectCode = static_cast<uint8_t>(c4001Rich.targetRejectedReason);
     Serial.print("s27 rr=");
-    Serial.print(c4001Rich.targetRangeRawM, 2);
+    Serial.print(c4001Rich.targetRangeRawM, 3);
     Serial.print(" ar=");
-    Serial.print(c4001Rich.targetRangeM, 2);
+    Serial.print(c4001Rich.targetRangeM, 3);
     Serial.print(" rv=");
-    Serial.print(c4001Rich.targetSpeedRawM, 2);
+    Serial.print(c4001Rich.targetSpeedRawM, 3);
     Serial.print(" av=");
-    Serial.print(c4001Rich.targetSpeedMps, 2);
+    Serial.print(c4001Rich.targetSpeedMps, 3);
     Serial.print(" ct=");
-    Serial.print(intent.sceneChargeTarget, 2);
+    Serial.print(intent.sceneChargeTarget, 3);
     Serial.print(" cs=");
-    Serial.print(intent.sceneCharge, 2);
+    Serial.print(intent.sceneCharge, 3);
     Serial.print(" ig=");
-    Serial.print(intent.sceneIngressLevel, 2);
+    Serial.print(intent.sceneIngressLevel, 3);
+    Serial.print(" tn=");
+    Serial.print(c4001Rich.targetNumber);
+    Serial.print(" sk=");
+    Serial.print(sampleKindCode(c4001LinkStatus.sampleKind));
     Serial.print(" rj=");
     Serial.println(rejectCode);
   }

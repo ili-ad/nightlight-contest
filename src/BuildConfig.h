@@ -214,7 +214,9 @@ namespace BuildConfig {
   constexpr float kAnthuriumNearFieldCompressionStartM = 0.90f;
   constexpr float kAnthuriumNearFieldCompressionExponent = 2.10f;
   constexpr float kAnthuriumChargeCompressionKnee = 0.68f;
-  constexpr float kAnthuriumChargeCompressionSoftness = 0.45f;
+  constexpr float kAnthuriumChargeCompressionSoftness = 0.72f;
+  constexpr float kAnthuriumChargeTargetMaxDeltaPerUpdate = 0.06f;
+  constexpr float kAnthuriumMinAcceptedRangeM = 0.06f;
   constexpr float kAnthuriumRangeSmoothingAlpha = 0.20f;
   constexpr float kAnthuriumSceneChargeSmoothingAlpha = 0.22f;
   constexpr float kAnthuriumSceneChargeDeadband = 0.012f;
