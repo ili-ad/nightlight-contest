@@ -39,9 +39,12 @@ private:
   CorePresence buildCoreFromRich(const C4001PresenceRich& rich, uint32_t nowMs);
 
   Snapshot applyFailure(uint32_t nowMs);
+  bool shouldPoll(uint32_t nowMs) const;
 
   bool initialized_ = false;
   LinkStatus linkStatus_{};
+  uint32_t lastPollMs_ = 0;
+  bool hasPolled_ = false;
 
   CorePresence lastCore_{};
   C4001PresenceRich lastRich_{};

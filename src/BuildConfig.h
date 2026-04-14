@@ -101,6 +101,7 @@ namespace BuildConfig {
   // - Decay confidence + hints gently while disconnected.
   // - Drop to sane empty state after sustained dropout.
   constexpr uint8_t kC4001MaxConsecutiveFailuresForOnline = 2;
+  constexpr uint32_t kC4001PollIntervalMs = 80;
   constexpr uint32_t kC4001DropoutHoldMs = 450;
   constexpr float kC4001ConfidenceDecayPerFailure = 0.18f;
   constexpr float kC4001DistanceDecayPerFailure = 0.12f;
