@@ -209,8 +209,16 @@ namespace BuildConfig {
   constexpr float kAmbientNightSelfLightExitMarginLux = 4.0f;
   constexpr uint32_t kAmbientNightSelfLightExtraExitDwellMs = 1200;
   constexpr float kAmbientActiveModeSuppressMinPresenceConfidence = 0.45f;
-  constexpr uint32_t kAmbientActiveModeSuppressExtraExitDwellMs = 10000;
+  constexpr float kAmbientActiveModeSuppressDecayMinPresenceConfidence = 0.55f;
+  constexpr uint32_t kAmbientActiveModeSuppressMaxBlockMs = 18000;
+  constexpr uint32_t kAmbientActiveModeSuppressEscapedExitDwellMs = 5000;
   constexpr float kAmbientActiveModeSuppressBrightOverrideLux = 52.0f;
+
+  // Day-dormant visual floor (soft boundary; quieter than NightIdle)
+  constexpr float kDayDormantWhiteFloor = 0.005f;
+  constexpr float kDayDormantRgbFloor = 0.003f;
+  constexpr float kDayDormantSaturation = 0.015f;
+  constexpr float kDayDormantAnimationRate = 0.006f;
 
   // ---------------------------------------------------------------------------
   // Compile-time sanity checks
