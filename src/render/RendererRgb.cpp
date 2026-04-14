@@ -70,6 +70,7 @@ namespace {
 
 void RendererRgb::begin(PixelBus& bus) {
   bus.clear();
+  mAnthuriumScene.reset();
 }
 
 void RendererRgb::renderBoot(PixelBus& bus, const BootFrame& frame) {
@@ -110,6 +111,11 @@ void RendererRgb::renderIntent(PixelBus& bus, const RenderIntent& intent) {
   uint8_t g = 0;
   uint8_t b = 0;
   hsvToRgb(intent.hue, intent.saturation, intent.rgbLevel, r, g, b);
+
+  if (intent.activeSceneMode == ActiveSceneMode::AnthuriumReservoir) {
+    mAnthuriumScene.renderRgb(bus, intent);
+    return;
+  }
 
   const uint8_t whiteLift = static_cast<uint8_t>(toByte(intent.whiteLevel) / 3);
   r = static_cast<uint8_t>(r + ((255 - r) < whiteLift ? (255 - r) : whiteLift));

@@ -1,5 +1,6 @@
 #include "MapperC4001.h"
 #include <math.h>
+#include "../BuildConfig.h"
 
 namespace {
   constexpr float kRoomRangeNearM = 0.45f;
@@ -37,6 +38,7 @@ namespace {
 RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001PresenceRich& rich) {
   if (context.state == LampState::ActiveInterpretive) {
     RenderIntent intent = mShared.mapActiveBaseline(context);
+    intent.sceneNowMs = context.nowMs;
 
     const bool targetValid = (rich.targetNumber > 0) && (rich.targetRangeM > 0.01f);
     if (targetValid) {
@@ -61,11 +63,19 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     const float speedMag = normalizeSpeedMag(speed);
     const float energyNorm = mHeldEnergyNorm;
 
-    intent.useLocalizedBlob = true;
-    intent.blobCenter = 1.0f - normalizeRange(mHeldRangeM);
-    intent.blobWidth = clamp01(0.16f + ((1.0f - context.presenceConfidence) * 0.08f) +
-                               ((1.0f - speedMag) * 0.06f));
-    intent.blobSoftness = 1.8f;
+    intent.activeSceneMode = ActiveSceneMode::AnthuriumReservoir;
+    intent.sceneNowMs = context.nowMs;
+
+    const float nearness = 1.0f - normalizeRange(mHeldRangeM);
+    intent.sceneCharge = clamp01((nearness * BuildConfig::kAnthuriumDistanceToChargeGain) +
+                                 (energyNorm * 0.10f));
+    intent.sceneIngressLevel = clamp01(BuildConfig::kAnthuriumIngressBaseLevel +
+                                       (intent.sceneCharge * 0.75f));
+    intent.sceneFieldLevel = clamp01(BuildConfig::kAnthuriumTorusFieldBaseLevel +
+                                     (intent.sceneCharge * 0.85f));
+    intent.sceneEnergyBoost = clamp01(energyNorm * BuildConfig::kAnthuriumEnergyWhiteBoostGain);
+
+    intent.useLocalizedBlob = false;
 
     if (speed < -kSpeedStillThresholdMps) {
       // Negative radial speed is treated as approaching.
@@ -81,15 +91,11 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     }
 
     const float stillnessBoost = 1.0f - speedMag;
-    intent.rgbLevel = clamp01(0.10f + (speedMag * 0.06f) + (energyNorm * 0.07f));
+    intent.rgbLevel = clamp01(0.11f + (intent.sceneCharge * 0.05f) + (speedMag * 0.05f));
     intent.whiteLevel = context.darkAllowed
-                            ? clamp01(intent.whiteLevel + (energyNorm * 0.05f) +
-                                      (stillnessBoost * 0.03f))
+                            ? clamp01(intent.whiteLevel + (energyNorm * 0.04f) +
+                                      (stillnessBoost * 0.02f))
                             : 0.0f;
-
-    if (rich.targetNumber > 1) {
-      intent.blobWidth = clamp01(intent.blobWidth + 0.04f);
-    }
 
     intent.effectId = static_cast<uint8_t>(context.state);
     return intent;
