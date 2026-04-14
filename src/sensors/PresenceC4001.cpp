@@ -20,11 +20,6 @@ namespace {
   float ema(float prev, float input, float alpha) {
     return prev + ((input - prev) * alpha);
   }
-
-  bool i2cDeviceResponds(uint8_t address) {
-    Wire.beginTransmission(address);
-    return Wire.endTransmission() == 0;
-  }
 }
 
 #if NIGHTLIGHT_HAS_C4001_LIB
@@ -36,6 +31,8 @@ namespace {
 void PresenceC4001::begin() {
   initialized_ = true;
   linkStatus_ = {};
+  lastPollMs_ = 0;
+  hasPolled_ = false;
   confidenceEma_ = 0.0f;
   distanceEma_ = 0.0f;
   motionEma_ = 0.0f;
@@ -61,6 +58,11 @@ PresenceC4001::Snapshot PresenceC4001::read() {
   }
 
   const uint32_t nowMs = millis();
+  if (!shouldPoll(nowMs)) {
+    return {lastCore_, lastRich_};
+  }
+  lastPollMs_ = nowMs;
+  hasPolled_ = true;
 
   C4001PresenceRich rich{};
   if (readSensorRich(rich)) {
@@ -98,16 +100,12 @@ bool PresenceC4001::initSensor() {
   gC4001.setFrettingDetection(eON);
   return true;
 #else
-  return i2cDeviceResponds(BuildConfig::kC4001I2cAddress);
+  return false;
 #endif
 }
 
 bool PresenceC4001::readSensorRich(C4001PresenceRich& outRich) {
 #if NIGHTLIGHT_HAS_C4001_LIB
-  if (!i2cDeviceResponds(BuildConfig::kC4001I2cAddress)) {
-    return false;
-  }
-
   // C4001 API audit (current DFRobot I2C path used by this repo):
   // - getTargetNumber()
   // - getTargetRange()
@@ -126,6 +124,13 @@ bool PresenceC4001::readSensorRich(C4001PresenceRich& outRich) {
 #else
   return false;
 #endif
+}
+
+bool PresenceC4001::shouldPoll(uint32_t nowMs) const {
+  if (!hasPolled_) {
+    return true;
+  }
+  return (nowMs - lastPollMs_) >= BuildConfig::kC4001PollIntervalMs;
 }
 
 float PresenceC4001::clamp01(float value) {
