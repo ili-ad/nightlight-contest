@@ -3,15 +3,9 @@
 #include <Arduino.h>
 #include <math.h>
 #include <Wire.h>
+#include <DFRobot_C4001.h>
 
 #include "../BuildConfig.h"
-
-#if __has_include(<DFRobot_C4001.h>)
-#include <DFRobot_C4001.h>
-#define NIGHTLIGHT_HAS_C4001_LIB 1
-#else
-#define NIGHTLIGHT_HAS_C4001_LIB 0
-#endif
 
 namespace {
   constexpr float kAssumedUsefulRangeM = 6.0f;
@@ -22,11 +16,9 @@ namespace {
   }
 }
 
-#if NIGHTLIGHT_HAS_C4001_LIB
 namespace {
   DFRobot_C4001_I2C gC4001(&Wire, BuildConfig::kC4001I2cAddress);
 }
-#endif
 
 void PresenceC4001::begin() {
   initialized_ = true;
@@ -104,7 +96,6 @@ const PresenceC4001::LinkStatus& PresenceC4001::linkStatus() const {
 }
 
 bool PresenceC4001::initSensor() {
-#if NIGHTLIGHT_HAS_C4001_LIB
   if (!gC4001.begin()) {
     return false;
   }
@@ -113,13 +104,9 @@ bool PresenceC4001::initSensor() {
   gC4001.setDetectThres(11, 1200, 10);
   gC4001.setFrettingDetection(eON);
   return true;
-#else
-  return false;
-#endif
 }
 
 bool PresenceC4001::readSensorRich(C4001PresenceRich& outRich) {
-#if NIGHTLIGHT_HAS_C4001_LIB
   // C4001 API audit (current DFRobot I2C path used by this repo):
   // - getTargetNumber()
   // - getTargetRange()
@@ -135,9 +122,6 @@ bool PresenceC4001::readSensorRich(C4001PresenceRich& outRich) {
   outRich.angleNorm = 0.0f;
   outRich.lateralBias = 0.0f;
   return true;
-#else
-  return false;
-#endif
 }
 
 bool PresenceC4001::shouldAttemptInit(uint32_t nowMs) const {
