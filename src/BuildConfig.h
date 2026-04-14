@@ -79,6 +79,7 @@ namespace BuildConfig {
   constexpr bool kEnableBootAnimation = true;
   constexpr bool kEnableInterludes = true;
   constexpr bool kEnableTelemetry = true;
+  constexpr uint32_t kTelemetryOfflineLogIntervalMs = 250;
 
   constexpr uint32_t kBootAnimationMs = 1800;
   constexpr uint32_t kInterludeMaxMs = 400;

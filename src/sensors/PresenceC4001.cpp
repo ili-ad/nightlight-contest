@@ -89,7 +89,14 @@ const PresenceC4001::LinkStatus& PresenceC4001::linkStatus() const {
 
 bool PresenceC4001::initSensor() {
 #if NIGHTLIGHT_HAS_C4001_LIB
-  return gC4001.begin(BuildConfig::kC4001I2cAddress, &Wire);
+  if (!gC4001.begin(BuildConfig::kC4001I2cAddress, &Wire)) {
+    return false;
+  }
+
+  gC4001.setSensorMode(eSpeedMode);
+  gC4001.setDetectThres(11, 1200, 10);
+  gC4001.setFrettingDetection(eON);
+  return true;
 #else
   return i2cDeviceResponds(BuildConfig::kC4001I2cAddress);
 #endif
@@ -97,7 +104,7 @@ bool PresenceC4001::initSensor() {
 
 bool PresenceC4001::readSensorRich(C4001PresenceRich& outRich) {
 #if NIGHTLIGHT_HAS_C4001_LIB
-  if (!gC4001.update()) {
+  if (!i2cDeviceResponds(BuildConfig::kC4001I2cAddress)) {
     return false;
   }
 
