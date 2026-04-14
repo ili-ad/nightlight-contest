@@ -16,23 +16,14 @@ public:
               const RenderIntent& intent);
 
 private:
-  static const char* linkStateName(PresenceC4001::LinkState state);
-  static const char* sampleKindName(PresenceC4001::SampleKind kind);
-  static const char* rejectReasonName(PresenceC4001::RejectReason reason);
+  static const char* stateCode(LampState state);
 
   bool mHasLastLinkState = false;
   PresenceC4001::LinkState mLastLinkState = PresenceC4001::LinkState::Offline;
-  PresenceC4001::SampleKind mLastSampleKind = PresenceC4001::SampleKind::Unknown;
-  bool mLastNoTargetHolding = false;
-  bool mLastNoTargetCommitted = false;
   uint32_t mLastOfflineLogMs = 0;
-  uint32_t mLastPresenceLogMs = 0;
-  uint32_t mLastRawC4001LogMs = 0;
+  uint32_t mLastS27LogMs = 0;
 
   bool mHasLastState = false;
   LampState mLastState = LampState::BootAnimation;
-  bool mHadAmbientPending = false;
-  bool mLastAmbientWaitingOnHold = false;
-  bool mLastAmbientPendingToDark = false;
   bool mLastAmbientSuppressed = false;
 };

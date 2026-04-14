@@ -5,83 +5,52 @@
 #include "../BuildConfig.h"
 
 namespace {
-  const char* stateName(LampState state) {
-    switch (state) {
-      case LampState::BootAnimation:
-        return "BootAnimation";
-      case LampState::DayDormant:
-        return "DayDormant";
-      case LampState::NightIdle:
-        return "NightIdle";
-      case LampState::ActiveInterpretive:
-        return "ActiveInterpretive";
-      case LampState::Decay:
-        return "Decay";
-      case LampState::InterludeGlitch:
-        return "InterludeGlitch";
-      case LampState::FaultSafe:
-        return "FaultSafe";
-      default:
-        return "Unknown";
-    }
+#if TELEM_PROFILE >= TELEM_MINIMAL
+const char* linkStateCode(PresenceC4001::LinkState state) {
+  switch (state) {
+    case PresenceC4001::LinkState::Online:
+      return "on";
+    case PresenceC4001::LinkState::DegradedHold:
+      return "dg";
+    case PresenceC4001::LinkState::Offline:
+    default:
+      return "off";
   }
 }
+#endif
+}  // namespace
 
 void Telemetry::begin() {
+#if TELEM_PROFILE != TELEM_NONE
   Serial.begin(115200);
+#endif
   mHasLastState = false;
   mLastState = LampState::BootAnimation;
   mHasLastLinkState = false;
   mLastLinkState = PresenceC4001::LinkState::Offline;
-  mLastSampleKind = PresenceC4001::SampleKind::Unknown;
-  mLastNoTargetHolding = false;
-  mLastNoTargetCommitted = false;
   mLastOfflineLogMs = 0;
-  mLastPresenceLogMs = 0;
-  mLastRawC4001LogMs = 0;
-  mHadAmbientPending = false;
-  mLastAmbientWaitingOnHold = false;
-  mLastAmbientPendingToDark = false;
+  mLastS27LogMs = 0;
   mLastAmbientSuppressed = false;
 }
 
-const char* Telemetry::linkStateName(PresenceC4001::LinkState state) {
+const char* Telemetry::stateCode(LampState state) {
   switch (state) {
-    case PresenceC4001::LinkState::Online:
-      return "online";
-    case PresenceC4001::LinkState::DegradedHold:
-      return "degraded_hold";
-    case PresenceC4001::LinkState::Offline:
+    case LampState::BootAnimation:
+      return "BT";
+    case LampState::DayDormant:
+      return "DD";
+    case LampState::NightIdle:
+      return "NI";
+    case LampState::ActiveInterpretive:
+      return "AI";
+    case LampState::Decay:
+      return "DC";
+    case LampState::InterludeGlitch:
+      return "IG";
+    case LampState::FaultSafe:
+      return "FS";
     default:
-      return "offline";
-  }
-}
-
-const char* Telemetry::sampleKindName(PresenceC4001::SampleKind kind) {
-  switch (kind) {
-    case PresenceC4001::SampleKind::Target:
-      return "target";
-    case PresenceC4001::SampleKind::NoTarget:
-      return "no_target";
-    case PresenceC4001::SampleKind::ReadFailure:
-      return "read_failure";
-    case PresenceC4001::SampleKind::Unknown:
-    default:
-      return "unknown";
-  }
-}
-
-const char* Telemetry::rejectReasonName(PresenceC4001::RejectReason reason) {
-  switch (reason) {
-    case PresenceC4001::RejectReason::SpeedCap:
-      return "speed_cap";
-    case PresenceC4001::RejectReason::RangeDelta:
-      return "range_delta";
-    case PresenceC4001::RejectReason::NearFieldCoherence:
-      return "near_coherence";
-    case PresenceC4001::RejectReason::None:
-    default:
-      return "none";
+      return "UK";
   }
 }
 
@@ -90,88 +59,51 @@ void Telemetry::update(const LampStateMachine& stateMachine,
                        const AmbientGateResult& ambientGate,
                        const C4001PresenceRich& c4001Rich,
                        const RenderIntent& intent) {
+#if TELEM_PROFILE == TELEM_NONE
+  (void)stateMachine;
+  (void)c4001LinkStatus;
+  (void)ambientGate;
+  (void)c4001Rich;
+  (void)intent;
+  return;
+#else
   const BehaviorContext& context = stateMachine.context();
   const uint32_t nowMs = millis();
   const bool stateChanged = !mHasLastState || (context.state != mLastState);
+
+#if TELEM_PROFILE >= TELEM_MINIMAL
   const bool linkTransitioned = !mHasLastLinkState || (c4001LinkStatus.state != mLastLinkState);
   const bool offlinePeriodic =
       (c4001LinkStatus.state == PresenceC4001::LinkState::Offline) &&
       ((mLastOfflineLogMs == 0) ||
        ((nowMs - mLastOfflineLogMs) >= BuildConfig::kTelemetryOfflineLogIntervalMs));
-  const bool presencePeriodic =
-      ((mLastPresenceLogMs == 0) ||
-       ((nowMs - mLastPresenceLogMs) >= BuildConfig::kTelemetryPresenceLogIntervalMs));
   const bool linkChanged = linkTransitioned || offlinePeriodic;
-  const bool shouldLogPresence = presencePeriodic;
-  const bool rawC4001Periodic =
-      ((mLastRawC4001LogMs == 0) ||
-       ((nowMs - mLastRawC4001LogMs) >= BuildConfig::kTelemetryC4001RawLogIntervalMs));
-  const bool shouldLogRawC4001 =
-      rawC4001Periodic && (context.state == LampState::ActiveInterpretive);
-  const bool sampleKindChanged = c4001LinkStatus.sampleKind != mLastSampleKind;
-  const bool noTargetModeChanged =
-      (c4001LinkStatus.noTargetHolding != mLastNoTargetHolding) ||
-      (c4001LinkStatus.noTargetCommitted != mLastNoTargetCommitted);
-  const bool shouldLogNoTarget = sampleKindChanged || noTargetModeChanged;
-  const bool ambientPendingNow = ambientGate.waitingOnDwell || ambientGate.waitingOnHold;
-  const bool ambientPendingChanged =
-      (!mHadAmbientPending && ambientPendingNow) || (mHadAmbientPending && !ambientPendingNow);
-  const bool ambientPendingModeChanged =
-      ambientPendingNow &&
-      ((mLastAmbientWaitingOnHold != ambientGate.waitingOnHold) ||
-       (mLastAmbientPendingToDark != ambientGate.pendingToDark));
-  const bool ambientSuppressionChanged =
-      (mLastAmbientSuppressed != ambientGate.dayExitSuppressedByActive);
+
+  const bool ambientSuppressionRaised =
+      ambientGate.dayExitSuppressedByActive && !mLastAmbientSuppressed;
   const bool ambientSuppressionEscaped = ambientGate.dayExitSuppressionEscaped;
-  const bool shouldLogAmbient = ambientGate.transitionCommitted || ambientPendingChanged ||
-                                ambientPendingModeChanged || ambientSuppressionChanged ||
-                                ambientSuppressionEscaped;
+  const bool ambientCommit = ambientGate.transitionCommitted;
+#endif
 
-  if (!stateChanged && !linkChanged && !shouldLogPresence && !shouldLogAmbient && !shouldLogNoTarget &&
-      !shouldLogRawC4001) {
-    return;
+#if TELEM_PROFILE >= TELEM_SENSOR27
+  const bool s27Periodic =
+      ((mLastS27LogMs == 0) ||
+       ((nowMs - mLastS27LogMs) >= BuildConfig::kTelemetryC4001RawLogIntervalMs));
+  const bool shouldLogS27 = s27Periodic && (context.state == LampState::ActiveInterpretive);
+#endif
+
+#if TELEM_PROFILE >= TELEM_MINIMAL
+  if (ambientCommit) {
+    Serial.print("ag c=");
+    Serial.print(ambientGate.darkAllowed ? "n" : "d");
+    Serial.print(" lx=");
+    Serial.println(ambientGate.gateLux, 1);
+  } else if (ambientSuppressionRaised) {
+    Serial.println("ag sup=1");
+  } else if (ambientSuppressionEscaped) {
+    Serial.println("ag sup=0");
   }
 
-  if (shouldLogAmbient) {
-    Serial.print("ambient_gate lux_raw=");
-    Serial.print(ambientGate.rawLux, 2);
-    Serial.print(" lux_gate=");
-    Serial.print(ambientGate.gateLux, 2);
-    Serial.print(" darkAllowed=");
-    Serial.print(ambientGate.darkAllowed ? "1" : "0");
-
-    if (ambientGate.transitionCommitted) {
-      Serial.print(" event=commit to=");
-      Serial.println(ambientGate.darkAllowed ? "night" : "day");
-    } else if (ambientGate.dayExitSuppressionEscaped && !ambientGate.pendingToDark &&
-               (ambientGate.waitingOnDwell || ambientGate.waitingOnHold)) {
-      Serial.print(" event=day_suppression_escaped dwell_ms=");
-      Serial.print(ambientGate.pendingElapsedMs);
-      Serial.print("/");
-      Serial.println(ambientGate.pendingRequiredMs);
-    } else if (ambientGate.dayExitSuppressedByActive && !ambientGate.pendingToDark &&
-               !ambientGate.waitingOnDwell && !ambientGate.waitingOnHold) {
-      Serial.println(" event=day_suppressed_active");
-    } else if (ambientGate.waitingOnHold) {
-      Serial.print(" event=hold_wait to=");
-      Serial.print(ambientGate.pendingToDark ? "night" : "day");
-      Serial.print(" hold_remaining_ms=");
-      Serial.println(ambientGate.holdRemainingMs);
-    } else if (ambientGate.waitingOnDwell) {
-      Serial.print(" event=dwell_wait to=");
-      Serial.print(ambientGate.pendingToDark ? "night" : "day");
-      Serial.print(" dwell_ms=");
-      Serial.print(ambientGate.pendingElapsedMs);
-      Serial.print("/");
-      Serial.println(ambientGate.pendingRequiredMs);
-    } else {
-      Serial.println(" event=clear");
-    }
-  }
-
-  mHadAmbientPending = ambientPendingNow;
-  mLastAmbientWaitingOnHold = ambientGate.waitingOnHold;
-  mLastAmbientPendingToDark = ambientGate.pendingToDark;
   mLastAmbientSuppressed = ambientGate.dayExitSuppressedByActive;
 
   if (linkChanged) {
@@ -181,96 +113,58 @@ void Telemetry::update(const LampStateMachine& stateMachine,
       mLastOfflineLogMs = nowMs;
     }
 
-    Serial.print("presence_link=");
-    Serial.print(linkStateName(c4001LinkStatus.state));
-    Serial.print(" online=");
+    Serial.print("ln=");
+    Serial.print(linkStateCode(c4001LinkStatus.state));
+    Serial.print(" on=");
     Serial.print(c4001LinkStatus.online ? "1" : "0");
-    Serial.print(" holding=");
+    Serial.print(" h=");
     Serial.print(c4001LinkStatus.holding ? "1" : "0");
-    Serial.print(" failures=");
-    Serial.print(c4001LinkStatus.consecutiveFailures);
-    Serial.print(" age_ms=");
-    if (c4001LinkStatus.lastSuccessMs == 0) {
-      Serial.println("n/a");
-    } else {
-      Serial.println(millis() - c4001LinkStatus.lastSuccessMs);
-    }
+    Serial.print(" f=");
+    Serial.println(c4001LinkStatus.consecutiveFailures);
   }
+#endif
 
-  if (shouldLogNoTarget) {
-    mLastSampleKind = c4001LinkStatus.sampleKind;
-    mLastNoTargetHolding = c4001LinkStatus.noTargetHolding;
-    mLastNoTargetCommitted = c4001LinkStatus.noTargetCommitted;
-
-    Serial.print("presence_sample=");
-    Serial.print(sampleKindName(c4001LinkStatus.sampleKind));
-    Serial.print(" no_target_hold=");
-    Serial.print(c4001LinkStatus.noTargetHolding ? "1" : "0");
-    Serial.print(" no_target_commit=");
-    Serial.print(c4001LinkStatus.noTargetCommitted ? "1" : "0");
-    Serial.print(" no_target_count=");
-    Serial.print(c4001LinkStatus.consecutiveNoTargetSamples);
-    Serial.print(" no_target_age_ms=");
-    if (c4001LinkStatus.noTargetSinceMs == 0) {
-      Serial.println("n/a");
-    } else {
-      Serial.println(nowMs - c4001LinkStatus.noTargetSinceMs);
-    }
+#if TELEM_PROFILE >= TELEM_SENSOR27
+  if (shouldLogS27) {
+    mLastS27LogMs = nowMs;
+    const uint8_t rejectCode = static_cast<uint8_t>(c4001Rich.targetRejectedReason);
+    Serial.print("s27 rr=");
+    Serial.print(c4001Rich.targetRangeRawM, 2);
+    Serial.print(" ar=");
+    Serial.print(c4001Rich.targetRangeM, 2);
+    Serial.print(" rv=");
+    Serial.print(c4001Rich.targetSpeedRawM, 2);
+    Serial.print(" av=");
+    Serial.print(c4001Rich.targetSpeedMps, 2);
+    Serial.print(" ct=");
+    Serial.print(intent.sceneChargeTarget, 2);
+    Serial.print(" cs=");
+    Serial.print(intent.sceneCharge, 2);
+    Serial.print(" ig=");
+    Serial.print(intent.sceneIngressLevel, 2);
+    Serial.print(" rj=");
+    Serial.println(rejectCode);
   }
+#endif
 
-  if (!stateChanged) {
-    if (shouldLogRawC4001) {
-      mLastRawC4001LogMs = nowMs;
-      Serial.print("c4001_raw targetNumber=");
-      Serial.print(c4001Rich.targetNumber);
-      Serial.print(" targetRangeRawM=");
-      Serial.print(c4001Rich.targetRangeRawM, 2);
-      Serial.print(" targetRangeAcceptedM=");
-      Serial.print(c4001Rich.targetRangeM, 2);
-      Serial.print(" targetSpeedRawMps=");
-      Serial.print(c4001Rich.targetSpeedRawM, 2);
-      Serial.print(" targetSpeedAcceptedMps=");
-      Serial.print(c4001Rich.targetSpeedMps, 2);
-      Serial.print(" accepted=");
-      Serial.print(c4001Rich.targetSampleAccepted ? "1" : "0");
-      Serial.print(" rejectedReason=");
-      Serial.print(rejectReasonName(static_cast<PresenceC4001::RejectReason>(c4001Rich.targetRejectedReason)));
-      Serial.print(" sceneChargeTarget=");
-      Serial.print(intent.sceneChargeTarget, 2);
-      Serial.print(" sceneIngressTarget=");
-      Serial.println(intent.sceneIngressLevel, 2);
-    }
+#if TELEM_PROFILE >= TELEM_MINIMAL
+  if (stateChanged) {
+    mHasLastState = true;
+    mLastState = context.state;
 
-    if (shouldLogPresence) {
-      mLastPresenceLogMs = nowMs;
-      Serial.print("presence confidence=");
-      Serial.print(context.presenceConfidence, 2);
-      Serial.print(" distance=");
-      Serial.print(context.distanceHint, 2);
-      Serial.print(" motion=");
-      Serial.print(context.motionHint, 2);
-      Serial.print(" age_ms=");
-      if (c4001LinkStatus.lastSuccessMs == 0) {
-        Serial.println("n/a");
-      } else {
-        Serial.println(nowMs - c4001LinkStatus.lastSuccessMs);
-      }
-    }
-    return;
+    Serial.print("st=");
+    Serial.print(stateCode(context.state));
+    Serial.print(" lx=");
+    Serial.print(context.ambientLux, 1);
+    Serial.print(" cf=");
+    Serial.print(context.presenceConfidence, 2);
+    Serial.print(" ds=");
+    Serial.print(context.distanceHint, 2);
+    Serial.print(" mo=");
+    Serial.println(context.motionHint, 2);
   }
-  mHasLastState = true;
-  mLastState = context.state;
-
-  Serial.print("state=");
-  Serial.print(stateName(context.state));
-  Serial.print(" darkAllowed=");
-  Serial.print(context.darkAllowed ? "1" : "0");
-  Serial.print(" ambientLux=");
-  Serial.print(context.ambientLux, 2);
-  Serial.print(" confidence=");
-  Serial.print(context.presenceConfidence, 2);
-  Serial.print(" distance=");
-  Serial.print(context.distanceHint, 2);
-  Serial.print(" motion=");
-  Serial.println(context.motionHint, 2);
+#else
+  (void)stateChanged;
+#endif
+#endif
 }

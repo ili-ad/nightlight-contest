@@ -1,6 +1,5 @@
 #include "AnthuriumScene.h"
 
-#include <Arduino.h>
 #include <math.h>
 #include "../BuildConfig.h"
 #include "../topology/PixelTopology.h"
@@ -67,7 +66,6 @@ void AnthuriumScene::reset() {
   mStableCharge = 0.0f;
   mSmoothedIngressLevel = 0.0f;
   mIngressConveyorPhase = 0.0f;
-  mLastTelemetryMs = 0;
 
   for (uint16_t i = 0; i < BuildConfig::kRingPixels; ++i) {
     mTorusCharge[i] = 0.0f;
@@ -343,42 +341,4 @@ void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool 
     }
   }
 
-  if ((intent.sceneNowMs > 0) &&
-      ((mLastTelemetryMs == 0) ||
-       ((intent.sceneNowMs - mLastTelemetryMs) >= BuildConfig::kAnthuriumSceneTelemetryIntervalMs))) {
-    mLastTelemetryMs = intent.sceneNowMs;
-
-    float ringAvg = 0.0f;
-    for (uint16_t i = 0; i < ring.count; ++i) {
-      ringAvg += mRingBrightness[i];
-    }
-    ringAvg = (ring.count > 0) ? (ringAvg / static_cast<float>(ring.count)) : 0.0f;
-
-    float ingressAvg = 0.0f;
-    uint16_t ingressCount = 0;
-    for (uint16_t i = 0; i < left.count; ++i) {
-      ingressAvg += mLeftBrightness[i];
-      ++ingressCount;
-    }
-    for (uint16_t i = 0; i < right.count; ++i) {
-      ingressAvg += mRightBrightness[i];
-      ++ingressCount;
-    }
-    ingressAvg = (ingressCount > 0) ? (ingressAvg / static_cast<float>(ingressCount)) : 0.0f;
-
-    Serial.print("anthurium_scene range_raw_m=");
-    Serial.print(intent.sceneTargetRangeM, 2);
-    Serial.print(" range_smooth_m=");
-    Serial.print(intent.sceneTargetRangeSmoothedM, 2);
-    Serial.print(" charge_target=");
-    Serial.print(intent.sceneChargeTarget, 2);
-    Serial.print(" charge_target_compressed=");
-    Serial.print(mCompressedChargeTarget, 2);
-    Serial.print(" charge_smooth=");
-    Serial.print(mStableCharge, 2);
-    Serial.print(" torus_field=");
-    Serial.print(ringAvg, 2);
-    Serial.print(" ingress=");
-    Serial.println(ingressAvg, 2);
-  }
 }

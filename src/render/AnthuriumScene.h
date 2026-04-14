@@ -20,7 +20,6 @@ private:
   float mStableCharge = 0.0f;
   float mSmoothedIngressLevel = 0.0f;
   float mIngressConveyorPhase = 0.0f;
-  uint32_t mLastTelemetryMs = 0;
 
   float mTorusCharge[BuildConfig::kRingPixels] = {0.0f};
   float mRingBrightness[BuildConfig::kRingPixels] = {0.0f};
