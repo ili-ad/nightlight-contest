@@ -201,7 +201,13 @@ namespace BuildConfig {
   // ---------------------------------------------------------------------------
   constexpr float kDarkEnterLux = 8.0f;
   constexpr float kDarkExitLux = 16.0f;
-  constexpr uint32_t kAmbientDwellMs = 2000;
+  constexpr float kAmbientGateSmoothingAlpha = 0.16f;
+  constexpr uint32_t kAmbientEnterDwellMs = 1800;
+  constexpr uint32_t kAmbientExitDwellMs = 2800;
+  constexpr uint32_t kAmbientMinDayHoldMs = 2200;
+  constexpr uint32_t kAmbientMinNightHoldMs = 2600;
+  constexpr float kAmbientNightSelfLightExitMarginLux = 4.0f;
+  constexpr uint32_t kAmbientNightSelfLightExtraExitDwellMs = 1200;
 
   // ---------------------------------------------------------------------------
   // Compile-time sanity checks

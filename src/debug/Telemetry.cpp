@@ -35,6 +35,9 @@ void Telemetry::begin() {
   mLastLinkState = PresenceC4001::LinkState::Offline;
   mLastOfflineLogMs = 0;
   mLastPresenceLogMs = 0;
+  mHadAmbientPending = false;
+  mLastAmbientWaitingOnHold = false;
+  mLastAmbientPendingToDark = false;
 }
 
 const char* Telemetry::linkStateName(PresenceC4001::LinkState state) {
@@ -50,7 +53,8 @@ const char* Telemetry::linkStateName(PresenceC4001::LinkState state) {
 }
 
 void Telemetry::update(const LampStateMachine& stateMachine,
-                       const PresenceC4001::LinkStatus& c4001LinkStatus) {
+                       const PresenceC4001::LinkStatus& c4001LinkStatus,
+                       const AmbientGateResult& ambientGate) {
   const BehaviorContext& context = stateMachine.context();
   const uint32_t nowMs = millis();
   const bool stateChanged = !mHasLastState || (context.state != mLastState);
@@ -64,10 +68,50 @@ void Telemetry::update(const LampStateMachine& stateMachine,
        ((nowMs - mLastPresenceLogMs) >= BuildConfig::kTelemetryPresenceLogIntervalMs));
   const bool linkChanged = linkTransitioned || offlinePeriodic;
   const bool shouldLogPresence = presencePeriodic;
+  const bool ambientPendingNow = ambientGate.waitingOnDwell || ambientGate.waitingOnHold;
+  const bool ambientPendingChanged =
+      (!mHadAmbientPending && ambientPendingNow) || (mHadAmbientPending && !ambientPendingNow);
+  const bool ambientPendingModeChanged =
+      ambientPendingNow &&
+      ((mLastAmbientWaitingOnHold != ambientGate.waitingOnHold) ||
+       (mLastAmbientPendingToDark != ambientGate.pendingToDark));
+  const bool shouldLogAmbient = ambientGate.transitionCommitted || ambientPendingChanged || ambientPendingModeChanged;
 
-  if (!stateChanged && !linkChanged && !shouldLogPresence) {
+  if (!stateChanged && !linkChanged && !shouldLogPresence && !shouldLogAmbient) {
     return;
   }
+
+  if (shouldLogAmbient) {
+    Serial.print("ambient_gate lux_raw=");
+    Serial.print(ambientGate.rawLux, 2);
+    Serial.print(" lux_gate=");
+    Serial.print(ambientGate.gateLux, 2);
+    Serial.print(" darkAllowed=");
+    Serial.print(ambientGate.darkAllowed ? "1" : "0");
+
+    if (ambientGate.transitionCommitted) {
+      Serial.print(" event=commit to=");
+      Serial.println(ambientGate.darkAllowed ? "night" : "day");
+    } else if (ambientGate.waitingOnHold) {
+      Serial.print(" event=hold_wait to=");
+      Serial.print(ambientGate.pendingToDark ? "night" : "day");
+      Serial.print(" hold_remaining_ms=");
+      Serial.println(ambientGate.holdRemainingMs);
+    } else if (ambientGate.waitingOnDwell) {
+      Serial.print(" event=dwell_wait to=");
+      Serial.print(ambientGate.pendingToDark ? "night" : "day");
+      Serial.print(" dwell_ms=");
+      Serial.print(ambientGate.pendingElapsedMs);
+      Serial.print("/");
+      Serial.println(ambientGate.pendingRequiredMs);
+    } else {
+      Serial.println(" event=clear");
+    }
+  }
+
+  mHadAmbientPending = ambientPendingNow;
+  mLastAmbientWaitingOnHold = ambientGate.waitingOnHold;
+  mLastAmbientPendingToDark = ambientGate.pendingToDark;
 
   if (linkChanged) {
     mHasLastLinkState = true;

@@ -1,12 +1,15 @@
 #pragma once
 
 #include "../behavior/LampStateMachine.h"
+#include "../processing/AmbientGate.h"
 #include "../sensors/PresenceC4001.h"
 
 class Telemetry {
 public:
   void begin();
-  void update(const LampStateMachine& stateMachine, const PresenceC4001::LinkStatus& c4001LinkStatus);
+  void update(const LampStateMachine& stateMachine,
+              const PresenceC4001::LinkStatus& c4001LinkStatus,
+              const AmbientGateResult& ambientGate);
 
 private:
   static const char* linkStateName(PresenceC4001::LinkState state);
@@ -18,4 +21,7 @@ private:
 
   bool mHasLastState = false;
   LampState mLastState = LampState::BootAnimation;
+  bool mHadAmbientPending = false;
+  bool mLastAmbientWaitingOnHold = false;
+  bool mLastAmbientPendingToDark = false;
 };
