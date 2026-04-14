@@ -17,6 +17,14 @@ enum class DebugInputMode : uint8_t {
   SimulatedApproachLoop
 };
 
+#define TELEM_NONE 0
+#define TELEM_MINIMAL 1
+#define TELEM_SENSOR27 2
+
+#ifndef TELEM_PROFILE
+#define TELEM_PROFILE TELEM_SENSOR27
+#endif
+
 namespace BuildConfig {
   // ---------------------------------------------------------------------------
   // Bench-proven hardware profile (Arduino Nano Every)
@@ -78,7 +86,8 @@ namespace BuildConfig {
   // ---------------------------------------------------------------------------
   constexpr bool kEnableBootAnimation = true;
   constexpr bool kEnableInterludes = true;
-  constexpr bool kEnableTelemetry = true;
+  constexpr bool kEnableTelemetry = (TELEM_PROFILE != TELEM_NONE);
+  constexpr uint8_t kTelemetryProfile = TELEM_PROFILE;
   constexpr uint32_t kTelemetryOfflineLogIntervalMs = 250;
   constexpr uint32_t kTelemetryPresenceLogIntervalMs = 500;
 
@@ -212,7 +221,6 @@ namespace BuildConfig {
   constexpr float kAnthuriumTorusBrightnessSmoothingAlpha = 0.24f;
   constexpr float kAnthuriumIngressBrightnessSmoothingAlpha = 0.22f;
   constexpr float kAnthuriumLuminanceDeadband = 0.015f;
-  constexpr uint32_t kAnthuriumSceneTelemetryIntervalMs = 350;
 
   // ---------------------------------------------------------------------------
   // RenderIntent smoothing policy (non-procedural states)
@@ -286,4 +294,7 @@ namespace BuildConfig {
   static_assert(kSimDayLockoutEndMs < kSimLoopMs,
                 "Simulation boundary order invalid: kSimDayLockoutEndMs must be < "
                 "kSimLoopMs");
+  static_assert((TELEM_PROFILE == TELEM_NONE) || (TELEM_PROFILE == TELEM_MINIMAL) ||
+                    (TELEM_PROFILE == TELEM_SENSOR27),
+                "TELEM_PROFILE must be TELEM_NONE, TELEM_MINIMAL, or TELEM_SENSOR27");
 }
