@@ -235,6 +235,8 @@ PresenceC4001::Snapshot PresenceC4001::applyNoTargetSuccess(const C4001PresenceR
                                                             uint32_t nowMs) {
   CorePresence core = lastCore_;
   lastRich_ = rich;
+  lastRich_.targetSampleAccepted = false;
+  lastRich_.targetRejectedReason = static_cast<uint8_t>(RejectReason::NoTarget);
 
   ++linkStatus_.consecutiveNoTargetSamples;
   if (linkStatus_.noTargetSinceMs == 0) {
@@ -350,7 +352,7 @@ bool PresenceC4001::acceptTargetSample(const C4001PresenceRich& rawRich,
   acceptedRangeM = rawRich.targetRangeM;
   acceptedSpeedMps = rawRich.targetSpeedMps;
 
-  if (rawRich.targetRangeM <= 0.01f) {
+  if (rawRich.targetRangeM < BuildConfig::kAnthuriumMinAcceptedRangeM) {
     reason = RejectReason::RangeDelta;
     return false;
   }
