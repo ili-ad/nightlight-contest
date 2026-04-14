@@ -208,6 +208,9 @@ namespace BuildConfig {
   constexpr uint32_t kAmbientMinNightHoldMs = 2600;
   constexpr float kAmbientNightSelfLightExitMarginLux = 4.0f;
   constexpr uint32_t kAmbientNightSelfLightExtraExitDwellMs = 1200;
+  constexpr float kAmbientActiveModeSuppressMinPresenceConfidence = 0.45f;
+  constexpr uint32_t kAmbientActiveModeSuppressExtraExitDwellMs = 10000;
+  constexpr float kAmbientActiveModeSuppressBrightOverrideLux = 52.0f;
 
   // ---------------------------------------------------------------------------
   // Compile-time sanity checks

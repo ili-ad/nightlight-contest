@@ -24,4 +24,5 @@ private:
   bool mHadAmbientPending = false;
   bool mLastAmbientWaitingOnHold = false;
   bool mLastAmbientPendingToDark = false;
+  bool mLastAmbientSuppressed = false;
 };

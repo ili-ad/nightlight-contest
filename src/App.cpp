@@ -48,10 +48,14 @@ namespace {
       inputs.ambientLux = ambient.luxRaw;
     }
 
-    inputs.ambientGate = gAmbientGate.update(inputs.ambientLux);
+    inputs.presence = gPresenceManager.readCore();
+    const LampState currentState = gStateMachine.context().state;
+    inputs.ambientGate = gAmbientGate.update(inputs.ambientLux,
+                                             currentState,
+                                             inputs.presence.presenceConfidence,
+                                             inputs.presence.present);
     inputs.darkAllowed = inputs.ambientGate.darkAllowed;
     inputs.ambientLux = inputs.ambientGate.gateLux;
-    inputs.presence = gPresenceManager.readCore();
 
     // 2) Optional explicit debug override.
     const DebugInputSample sim = DebugModes::sample(millis());
