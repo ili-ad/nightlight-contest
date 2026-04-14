@@ -70,6 +70,7 @@ namespace {
 
 void RendererRgbw::begin(PixelBus& bus) {
   bus.clear();
+  mAnthuriumScene.reset();
 }
 
 void RendererRgbw::renderBoot(PixelBus& bus, const BootFrame& frame) {
@@ -116,6 +117,11 @@ void RendererRgbw::renderIntent(PixelBus& bus, const RenderIntent& intent) {
   uint8_t g = 0;
   uint8_t b = 0;
   hsvToRgb(intent.hue, intent.saturation, intent.rgbLevel, r, g, b);
+
+  if (intent.activeSceneMode == ActiveSceneMode::AnthuriumReservoir) {
+    mAnthuriumScene.renderRgbw(bus, intent);
+    return;
+  }
 
   if (!intent.useLocalizedBlob || (bus.size() <= 1)) {
     const uint8_t w = toByte(intent.whiteLevel);

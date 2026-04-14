@@ -164,6 +164,27 @@ namespace BuildConfig {
   constexpr float kC4001TargetEnergyRgbBoost = 0.10f;
 
   // ---------------------------------------------------------------------------
+  // Anthurium reservoir active-scene tuning (POL-021)
+  // ---------------------------------------------------------------------------
+  constexpr uint32_t kAnthuriumIngressTravelMs = 3000;
+  constexpr uint32_t kAnthuriumTorusClearMs = 18000;
+  constexpr float kAnthuriumDistanceToChargeGain = 0.92f;
+  constexpr float kAnthuriumIngressBaseLevel = 0.18f;
+  constexpr float kAnthuriumTorusFieldBaseLevel = 0.30f;
+  constexpr float kAnthuriumEnergyWhiteBoostGain = 0.20f;
+  constexpr float kAnthuriumTorusAccumulationGain = 0.45f;
+  constexpr float kAnthuriumTorusInstantGain = 0.08f;
+  constexpr float kAnthuriumTorusBaseFieldLevel = 0.06f;
+  constexpr float kAnthuriumTorusDiffusionPerSecond = 0.34f;
+  constexpr uint32_t kAnthuriumIngressEmitPeriodMs = 120;
+  constexpr float kAnthuriumIngressPulseGain = 0.85f;
+  constexpr float kAnthuriumIngressPulseWidth = 0.13f;
+  constexpr float kAnthuriumStamenAmbientFloor = 0.05f;
+  constexpr uint16_t kAnthuriumTorusIngressA = 2;
+  constexpr uint16_t kAnthuriumTorusIngressB = (kRingPixels / 2) + 2;
+  constexpr float kAnthuriumTorusIngressSpread = 3.5f;
+
+  // ---------------------------------------------------------------------------
   // RenderIntent smoothing policy (non-procedural states)
   // ---------------------------------------------------------------------------
   constexpr float kIntentWhiteRiseAlpha = 0.16f;
