@@ -1,5 +1,6 @@
 #include "AnthuriumScene.h"
 
+#include <Arduino.h>
 #include <math.h>
 #include "../BuildConfig.h"
 #include "../topology/PixelTopology.h"
@@ -62,8 +63,10 @@ void AnthuriumScene::reset() {
   mLastNowMs = 0;
   mLastDtSec = 0.016f;
   mSmoothedCharge = 0.0f;
+  mStableCharge = 0.0f;
   mSmoothedIngressLevel = 0.0f;
   mIngressConveyorPhase = 0.0f;
+  mLastTelemetryMs = 0;
 
   for (uint16_t i = 0; i < BuildConfig::kRingPixels; ++i) {
     mTorusCharge[i] = 0.0f;
@@ -106,15 +109,14 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
 
   const float dtSec = static_cast<float>(dtMs) / 1000.0f;
   mLastDtSec = dtSec;
-  const float chargeRiseSec = static_cast<float>(BuildConfig::kAnthuriumChargeRiseTauMs) / 1000.0f;
-  const float chargeFallSec = static_cast<float>(BuildConfig::kAnthuriumChargeFallTauMs) / 1000.0f;
-  const float chargeTarget = clamp01(intent.sceneCharge);
-  const float chargeTau = (chargeTarget >= mSmoothedCharge) ? chargeRiseSec : chargeFallSec;
-  const float chargeAlpha = (chargeTau > 0.001f) ? (1.0f - expf(-dtSec / chargeTau)) : 1.0f;
+  const float chargeTarget = clamp01(intent.sceneChargeTarget > 0.0f ? intent.sceneChargeTarget : intent.sceneCharge);
+  const float chargeAlpha = clamp01(BuildConfig::kAnthuriumSceneChargeSmoothingAlpha);
   mSmoothedCharge += (chargeTarget - mSmoothedCharge) * chargeAlpha;
   mSmoothedCharge = clamp01(mSmoothedCharge);
+  mStableCharge = applyDeadband(mStableCharge, mSmoothedCharge, BuildConfig::kAnthuriumSceneChargeDeadband);
+  mStableCharge = clamp01(mStableCharge);
 
-  const float ingressTarget = clamp01(intent.sceneIngressLevel * (0.30f + (0.70f * mSmoothedCharge)));
+  const float ingressTarget = clamp01(intent.sceneIngressLevel * (0.30f + (0.70f * mStableCharge)));
   const float ingressAlpha = (BuildConfig::kAnthuriumIngressSmoothingSec > 0.001f)
                                  ? (1.0f - expf(-dtSec / BuildConfig::kAnthuriumIngressSmoothingSec))
                                  : 1.0f;
@@ -148,7 +150,7 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
   const uint16_t ingressA = BuildConfig::kAnthuriumTorusIngressA % ringCount;
   const uint16_t ingressB = BuildConfig::kAnthuriumTorusIngressB % ringCount;
   const float spread = BuildConfig::kAnthuriumTorusIngressSpread;
-  const float torusInput = clamp01(mSmoothedCharge * BuildConfig::kAnthuriumDistanceToChargeGain) * dtSec *
+  const float torusInput = clamp01(mStableCharge * BuildConfig::kAnthuriumDistanceToChargeGain) * dtSec *
                            BuildConfig::kAnthuriumTorusAccumulationGain *
                            BuildConfig::kAnthuriumContinuousInjectionGain;
 
@@ -183,7 +185,7 @@ float AnthuriumScene::sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenC
 
   const float width = BuildConfig::kAnthuriumIngressConveyorWidth;
   const float moving = expf(-(delta * delta) / (2.0f * width * width));
-  const float floor = mSmoothedCharge * BuildConfig::kAnthuriumIngressFloorFromCharge;
+  const float floor = mStableCharge * BuildConfig::kAnthuriumIngressFloorFromCharge;
   return clamp01(floor + (moving * mSmoothedIngressLevel));
 }
 
@@ -208,6 +210,13 @@ float AnthuriumScene::applyBrightnessSlew(float previous, float target, float dt
   return target;
 }
 
+float AnthuriumScene::applyDeadband(float previous, float target, float threshold) const {
+  if (fabsf(target - previous) <= threshold) {
+    return previous;
+  }
+  return target;
+}
+
 void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool useWhite) {
   const float dtSec = (mLastDtSec > 0.0001f) ? mLastDtSec : 0.016f;
   uint8_t r = 0;
@@ -223,8 +232,12 @@ void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool 
     const uint16_t px = ring.start + i;
     const float field = sampleTorusField(i, ring.count);
     const float targetBrightness = clamp01((field * intent.sceneFieldLevel) +
-                                           (mSmoothedCharge * BuildConfig::kAnthuriumTorusInstantGain));
-    mRingBrightness[i] = applyBrightnessSlew(mRingBrightness[i], targetBrightness, dtSec);
+                                           (mStableCharge * BuildConfig::kAnthuriumTorusInstantGain));
+    const float torusAlpha = clamp01(BuildConfig::kAnthuriumTorusBrightnessSmoothingAlpha);
+    const float torusSmoothed = mRingBrightness[i] + ((targetBrightness - mRingBrightness[i]) * torusAlpha);
+    const float torusDeadbanded =
+        applyDeadband(mRingBrightness[i], torusSmoothed, BuildConfig::kAnthuriumLuminanceDeadband);
+    mRingBrightness[i] = applyBrightnessSlew(mRingBrightness[i], torusDeadbanded, dtSec);
     const float brightness = mRingBrightness[i];
 
     const float white = clamp01((intent.whiteLevel + intent.sceneEnergyBoost) * field);
@@ -253,7 +266,11 @@ void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool 
     const float targetBrightness =
         clamp01((ingress * intent.sceneIngressLevel) +
                 (BuildConfig::kAnthuriumStamenAmbientFloor * intent.sceneFieldLevel));
-    mLeftBrightness[i] = applyBrightnessSlew(mLeftBrightness[i], targetBrightness, dtSec);
+    const float ingressAlpha = clamp01(BuildConfig::kAnthuriumIngressBrightnessSmoothingAlpha);
+    const float ingressSmoothed = mLeftBrightness[i] + ((targetBrightness - mLeftBrightness[i]) * ingressAlpha);
+    const float ingressDeadbanded =
+        applyDeadband(mLeftBrightness[i], ingressSmoothed, BuildConfig::kAnthuriumLuminanceDeadband);
+    mLeftBrightness[i] = applyBrightnessSlew(mLeftBrightness[i], ingressDeadbanded, dtSec);
     const float brightness = mLeftBrightness[i];
     const float white = clamp01((intent.whiteLevel + intent.sceneEnergyBoost) * ingress);
 
@@ -281,7 +298,11 @@ void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool 
     const float targetBrightness =
         clamp01((ingress * intent.sceneIngressLevel) +
                 (BuildConfig::kAnthuriumStamenAmbientFloor * intent.sceneFieldLevel));
-    mRightBrightness[i] = applyBrightnessSlew(mRightBrightness[i], targetBrightness, dtSec);
+    const float ingressAlpha = clamp01(BuildConfig::kAnthuriumIngressBrightnessSmoothingAlpha);
+    const float ingressSmoothed = mRightBrightness[i] + ((targetBrightness - mRightBrightness[i]) * ingressAlpha);
+    const float ingressDeadbanded =
+        applyDeadband(mRightBrightness[i], ingressSmoothed, BuildConfig::kAnthuriumLuminanceDeadband);
+    mRightBrightness[i] = applyBrightnessSlew(mRightBrightness[i], ingressDeadbanded, dtSec);
     const float brightness = mRightBrightness[i];
     const float white = clamp01((intent.whiteLevel + intent.sceneEnergyBoost) * ingress);
 
@@ -301,5 +322,42 @@ void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool 
       bb = static_cast<uint8_t>(bb + ((255 - bb) < whiteLift ? (255 - bb) : whiteLift));
       bus.setRgb(px, rr, gg, bb);
     }
+  }
+
+  if ((intent.sceneNowMs > 0) &&
+      ((mLastTelemetryMs == 0) ||
+       ((intent.sceneNowMs - mLastTelemetryMs) >= BuildConfig::kAnthuriumSceneTelemetryIntervalMs))) {
+    mLastTelemetryMs = intent.sceneNowMs;
+
+    float ringAvg = 0.0f;
+    for (uint16_t i = 0; i < ring.count; ++i) {
+      ringAvg += mRingBrightness[i];
+    }
+    ringAvg = (ring.count > 0) ? (ringAvg / static_cast<float>(ring.count)) : 0.0f;
+
+    float ingressAvg = 0.0f;
+    uint16_t ingressCount = 0;
+    for (uint16_t i = 0; i < left.count; ++i) {
+      ingressAvg += mLeftBrightness[i];
+      ++ingressCount;
+    }
+    for (uint16_t i = 0; i < right.count; ++i) {
+      ingressAvg += mRightBrightness[i];
+      ++ingressCount;
+    }
+    ingressAvg = (ingressCount > 0) ? (ingressAvg / static_cast<float>(ingressCount)) : 0.0f;
+
+    Serial.print("anthurium_scene range_raw_m=");
+    Serial.print(intent.sceneTargetRangeM, 2);
+    Serial.print(" range_smooth_m=");
+    Serial.print(intent.sceneTargetRangeSmoothedM, 2);
+    Serial.print(" charge_target=");
+    Serial.print(intent.sceneChargeTarget, 2);
+    Serial.print(" charge_smooth=");
+    Serial.print(mStableCharge, 2);
+    Serial.print(" torus_field=");
+    Serial.print(ringAvg, 2);
+    Serial.print(" ingress=");
+    Serial.println(ingressAvg, 2);
   }
 }
