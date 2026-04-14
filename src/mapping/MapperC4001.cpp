@@ -33,6 +33,20 @@ namespace {
   float normalizeSpeedMag(float speedMps) {
     return clamp01(fabsf(speedMps) / 1.50f);
   }
+
+  float compressNearFieldNearness(float rangeM) {
+    const float baseNearness = 1.0f - normalizeRange(rangeM);
+    const float nearStartM = BuildConfig::kAnthuriumNearFieldCompressionStartM;
+    if (nearStartM <= kRoomRangeNearM || rangeM >= nearStartM) {
+      return clamp01(baseNearness);
+    }
+
+    const float startNearness = 1.0f - normalizeRange(nearStartM);
+    const float closeSpan = 1.0f - startNearness;
+    const float t = clamp01((rangeM - kRoomRangeNearM) / (nearStartM - kRoomRangeNearM));
+    const float curved = 1.0f - powf(t, BuildConfig::kAnthuriumNearFieldCompressionExponent);
+    return clamp01(startNearness + (curved * closeSpan));
+  }
 }
 
 RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001PresenceRich& rich) {
@@ -59,6 +73,14 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
       return intent;
     }
 
+    if (!mHasSmoothedRange) {
+      mSmoothedRangeM = mHeldRangeM;
+      mHasSmoothedRange = true;
+    } else {
+      const float rangeAlpha = clamp01(BuildConfig::kAnthuriumRangeSmoothingAlpha);
+      mSmoothedRangeM += (mHeldRangeM - mSmoothedRangeM) * rangeAlpha;
+    }
+
     const float speed = mHeldSpeedMps;
     const float speedMag = normalizeSpeedMag(speed);
     const float energyNorm = mHeldEnergyNorm;
@@ -66,9 +88,12 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     intent.activeSceneMode = ActiveSceneMode::AnthuriumReservoir;
     intent.sceneNowMs = context.nowMs;
 
-    const float nearness = 1.0f - normalizeRange(mHeldRangeM);
+    const float nearness = compressNearFieldNearness(mSmoothedRangeM);
     intent.sceneCharge = clamp01((nearness * BuildConfig::kAnthuriumDistanceToChargeGain) +
                                  (energyNorm * 0.10f));
+    intent.sceneTargetRangeM = mHeldRangeM;
+    intent.sceneTargetRangeSmoothedM = mSmoothedRangeM;
+    intent.sceneChargeTarget = intent.sceneCharge;
     intent.sceneIngressLevel = clamp01(BuildConfig::kAnthuriumIngressBaseLevel +
                                        (intent.sceneCharge * 0.75f));
     intent.sceneFieldLevel = clamp01(BuildConfig::kAnthuriumTorusFieldBaseLevel +

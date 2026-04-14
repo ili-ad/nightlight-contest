@@ -16,8 +16,10 @@ private:
   uint32_t mLastNowMs = 0;
   float mLastDtSec = 0.016f;
   float mSmoothedCharge = 0.0f;
+  float mStableCharge = 0.0f;
   float mSmoothedIngressLevel = 0.0f;
   float mIngressConveyorPhase = 0.0f;
+  uint32_t mLastTelemetryMs = 0;
 
   float mTorusCharge[BuildConfig::kRingPixels] = {0.0f};
   float mRingBrightness[BuildConfig::kRingPixels] = {0.0f};
@@ -30,4 +32,5 @@ private:
   float sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenCount) const;
   float sampleTorusField(uint16_t ringPixel, uint16_t ringCount) const;
   float applyBrightnessSlew(float previous, float target, float dtSec) const;
+  float applyDeadband(float previous, float target, float threshold) const;
 };

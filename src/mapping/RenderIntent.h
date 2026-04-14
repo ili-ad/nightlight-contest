@@ -38,6 +38,9 @@ struct RenderIntent {
   float sceneIngressLevel = 0.0f;
   float sceneFieldLevel = 0.0f;
   float sceneEnergyBoost = 0.0f;
+  float sceneTargetRangeM = 0.0f;
+  float sceneTargetRangeSmoothedM = 0.0f;
+  float sceneChargeTarget = 0.0f;
 
   // Effect selection
   uint8_t effectId = 0;
