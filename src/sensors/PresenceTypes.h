@@ -46,6 +46,10 @@ struct C4001PresenceRich {
   int targetNumber = 0;
   float targetRangeM = 0.0f;
   float targetSpeedMps = 0.0f;
+  float targetRangeRawM = 0.0f;
+  float targetSpeedRawM = 0.0f;
+  bool targetSampleAccepted = false;
+  uint8_t targetRejectedReason = 0;
   int targetEnergy = 0;
 
   // Placeholder directional semantics only (not yet driven by raw protocol).

@@ -121,6 +121,12 @@ namespace BuildConfig {
   constexpr float kC4001ConfidenceEmaAlpha = 0.30f;
   constexpr float kC4001DistanceEmaAlpha = 0.35f;
   constexpr float kC4001MotionEmaAlpha = 0.35f;
+  constexpr float kC4001MaxAcceptedSpeedMps = 2.60f;
+  constexpr float kC4001MaxAcceptedRangeDeltaPerSecond = 1.80f;
+  constexpr float kC4001NearFieldStartM = 1.80f;
+  constexpr float kC4001NearFieldStrongSwingM = 0.20f;
+  constexpr uint8_t kC4001NearFieldCoherentSamples = 2;
+  constexpr float kC4001NearFieldCoherenceBandM = 0.22f;
 
   // ---------------------------------------------------------------------------
   // Brightness ranges
@@ -198,6 +204,8 @@ namespace BuildConfig {
   constexpr uint32_t kTelemetryC4001RawLogIntervalMs = 400;
   constexpr float kAnthuriumNearFieldCompressionStartM = 0.90f;
   constexpr float kAnthuriumNearFieldCompressionExponent = 2.10f;
+  constexpr float kAnthuriumChargeCompressionKnee = 0.68f;
+  constexpr float kAnthuriumChargeCompressionSoftness = 0.45f;
   constexpr float kAnthuriumRangeSmoothingAlpha = 0.20f;
   constexpr float kAnthuriumSceneChargeSmoothingAlpha = 0.22f;
   constexpr float kAnthuriumSceneChargeDeadband = 0.012f;

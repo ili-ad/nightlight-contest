@@ -18,6 +18,7 @@ public:
 private:
   static const char* linkStateName(PresenceC4001::LinkState state);
   static const char* sampleKindName(PresenceC4001::SampleKind kind);
+  static const char* rejectReasonName(PresenceC4001::RejectReason reason);
 
   bool mHasLastLinkState = false;
   PresenceC4001::LinkState mLastLinkState = PresenceC4001::LinkState::Offline;
