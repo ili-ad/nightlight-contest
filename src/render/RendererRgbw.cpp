@@ -1,5 +1,6 @@
 #include "RendererRgbw.h"
 #include "../topology/PixelPaths.h"
+#include <math.h>
 
 namespace {
   float clamp01(float value) {
@@ -17,6 +18,18 @@ namespace {
     return static_cast<uint8_t>(clamped * 255.0f);
   }
 
+
+
+  float blobWeight(float pixelPos, float center, float width, float softness) {
+    const float halfWidth = (width < 0.01f) ? 0.01f : (width * 0.5f);
+    const float normalizedDistance = fabsf(pixelPos - center) / halfWidth;
+    if (normalizedDistance >= 1.0f) {
+      return 0.0f;
+    }
+
+    const float falloff = 1.0f - normalizedDistance;
+    return powf(falloff, softness < 1.0f ? 1.0f : softness);
+  }
   void hsvToRgb(float hue, float saturation, float value, uint8_t& r, uint8_t& g, uint8_t& b) {
     const float s = clamp01(saturation);
     const float v = clamp01(value);
@@ -103,10 +116,28 @@ void RendererRgbw::renderIntent(PixelBus& bus, const RenderIntent& intent) {
   uint8_t g = 0;
   uint8_t b = 0;
   hsvToRgb(intent.hue, intent.saturation, intent.rgbLevel, r, g, b);
-  const uint8_t w = toByte(intent.whiteLevel);
+
+  if (!intent.useLocalizedBlob || (bus.size() <= 1)) {
+    const uint8_t w = toByte(intent.whiteLevel);
+    for (uint16_t i = 0; i < bus.size(); ++i) {
+      bus.setRgbw(i, r, g, b, w);
+    }
+    return;
+  }
+
+  const float center = clamp01(intent.blobCenter);
+  const float width = clamp01(intent.blobWidth);
+  const float softness = intent.blobSoftness;
 
   for (uint16_t i = 0; i < bus.size(); ++i) {
-    bus.setRgbw(i, r, g, b, w);
+    const float pixelPos = static_cast<float>(i) / static_cast<float>(bus.size() - 1);
+    const float weight = blobWeight(pixelPos, center, width, softness);
+
+    bus.setRgbw(i,
+                toByte((static_cast<float>(r) / 255.0f) * weight),
+                toByte((static_cast<float>(g) / 255.0f) * weight),
+                toByte((static_cast<float>(b) / 255.0f) * weight),
+                toByte(intent.whiteLevel * weight));
   }
 }
 

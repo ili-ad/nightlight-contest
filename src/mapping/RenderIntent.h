@@ -18,6 +18,12 @@ struct RenderIntent {
   // Geometry / emphasis
   SegmentId emphasizedSegment = SegmentId::WholeObject;
 
+  // Optional localized active blob (strip-address-space semantics).
+  bool useLocalizedBlob = false;
+  float blobCenter = 0.5f;    // normalized 0..1 along strip
+  float blobWidth = 0.25f;    // normalized 0..1
+  float blobSoftness = 1.2f;  // >= 1.0f; larger softens edge falloff
+
   // Effect selection
   uint8_t effectId = 0;
   bool clearBeforeRender = true;

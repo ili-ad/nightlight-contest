@@ -6,6 +6,7 @@
 #include "debug/Telemetry.h"
 #include "effects/BootEffects.h"
 #include "effects/InterludeEffects.h"
+#include "mapping/MapperC4001.h"
 #include "mapping/MapperShared.h"
 #include "mapping/RenderIntent.h"
 #include "processing/AmbientGate.h"
@@ -21,6 +22,7 @@ static PixelBus gPixelBus;
 static RendererRgb gRendererRgb;
 static RendererRgbw gRendererRgbw;
 static MapperShared gMapper;
+static MapperC4001 gMapperC4001;
 static AmbientBh1750 gAmbientSensor;
 static AmbientGate gAmbientGate;
 static PresenceManager gPresenceManager;
@@ -64,6 +66,10 @@ namespace {
   }
 
   RenderIntent buildRenderIntent(const BehaviorContext& context) {
+    if (BuildConfig::kPresenceBackend == PresenceBackend::C4001) {
+      return gMapperC4001.map(context, gPresenceManager.lastC4001Rich());
+    }
+
     return gMapper.map(context);
   }
 
