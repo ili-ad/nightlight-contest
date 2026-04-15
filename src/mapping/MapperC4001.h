@@ -11,11 +11,8 @@ public:
 private:
   MapperShared mShared;
 
-  bool mHasHeldTarget = false;
   bool mHasSmoothedRange = false;
-  uint32_t mHeldAtMs = 0;
-  float mHeldRangeM = 0.0f;
-  float mHeldSpeedMps = 0.0f;
-  float mHeldEnergyNorm = 0.0f;
+  bool mHasChargeTarget = false;
   float mSmoothedRangeM = 0.0f;
+  float mLastChargeTarget = 0.0f;
 };
