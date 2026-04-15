@@ -17,5 +17,7 @@ private:
   float mSmoothedRangeM = 0.0f;
   float mLastChargeTarget = 0.0f;
   float mHeldCharge = 0.0f;
+  float mHeldRangeM = 0.0f;
+  float mHeldSmoothedRangeM = 0.0f;
   uint32_t mLastAcceptedSceneMs = 0;
 };

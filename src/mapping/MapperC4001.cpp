@@ -99,6 +99,8 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
             withinHold ? 0.0f : static_cast<float>(ageMs - BuildConfig::kAnthuriumRejectedHoldMs) / 1000.0f;
         const float heldCharge = applyRejectDecay(mHeldCharge, rejectAgeSec);
         intent.activeSceneMode = ActiveSceneMode::AnthuriumReservoir;
+        intent.sceneTargetRangeM = mHeldRangeM;
+        intent.sceneTargetRangeSmoothedM = mHeldSmoothedRangeM;
         intent.sceneChargeTarget = heldCharge;
         intent.sceneCharge = heldCharge;
         intent.sceneIngressLevel = clamp01(BuildConfig::kAnthuriumIngressBaseLevel +
@@ -172,6 +174,8 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     intent.effectId = static_cast<uint8_t>(context.state);
     mHasAcceptedSceneDrive = true;
     mHeldCharge = intent.sceneCharge;
+    mHeldRangeM = intent.sceneTargetRangeM;
+    mHeldSmoothedRangeM = intent.sceneTargetRangeSmoothedM;
     mLastAcceptedSceneMs = context.nowMs;
     return intent;
   }
