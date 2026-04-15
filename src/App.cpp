@@ -11,7 +11,6 @@
 #include "mapping/RenderIntent.h"
 #include "processing/AmbientGate.h"
 #include "render/PixelBus.h"
-#include "render/RendererRgb.h"
 #include "render/RendererRgbw.h"
 #include "render/RenderIntentSmoother.h"
 #include "sensors/AmbientBh1750.h"
@@ -20,7 +19,6 @@
 static LampStateMachine gStateMachine;
 static Telemetry gTelemetry;
 static PixelBus gPixelBus;
-static RendererRgb gRendererRgb;
 static RendererRgbw gRendererRgbw;
 static MapperShared gMapper;
 static MapperC4001 gMapperC4001;
@@ -96,31 +94,6 @@ namespace {
     }
   }
 
-  void renderRgbFrame(const BehaviorContext& context, const RenderIntent& intent) {
-    switch (context.state) {
-      case LampState::BootAnimation: {
-        BootFrame frame = BootEffects::sample(context.elapsedInStateMs());
-        gRendererRgb.renderBoot(gPixelBus, frame);
-        break;
-      }
-
-      case LampState::InterludeGlitch: {
-        InterludeFrame frame = InterludeEffects::marchingAnts(context.elapsedInStateMs());
-        gRendererRgb.renderInterlude(gPixelBus, frame);
-        break;
-      }
-
-      case LampState::DayDormant:
-      case LampState::NightIdle:
-      case LampState::ActiveInterpretive:
-      case LampState::Decay:
-      case LampState::FaultSafe:
-      default:
-        gRendererRgb.renderIntent(gPixelBus, intent);
-        break;
-    }
-  }
-
   void renderRgbwFrame(const BehaviorContext& context, const RenderIntent& intent) {
     switch (context.state) {
       case LampState::BootAnimation: {
@@ -147,11 +120,8 @@ namespace {
   }
 
   void renderFrame(const BehaviorContext& context, const RenderIntent& intent) {
-    if (BuildConfig::kRenderBackend == RenderBackend::RGB) {
-      renderRgbFrame(context, intent);
-      return;
-    }
-
+    // Current Nano Every bench target is RGBW-only. Reintroduce RGB backend
+    // dispatch here if/when a bench build actively uses it again.
     renderRgbwFrame(context, intent);
   }
 }
@@ -163,7 +133,6 @@ void App::setup() {
   gPresenceManager.begin();
   gPixelBus.begin();
 
-  gRendererRgb.begin(gPixelBus);
   gRendererRgbw.begin(gPixelBus);
   gIntentSmoother.reset();
 }
