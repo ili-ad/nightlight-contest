@@ -103,11 +103,13 @@ RenderIntent MapperC4001::map(const BehaviorContext& context,
   const float dtSec = safeDeltaSec(context.nowMs, mLastSceneUpdateMs);
   mLastSceneUpdateMs = context.nowMs;
 
-  mTrackFilter.configure(BuildConfig::kC4001DropoutHoldMs,
+  constexpr uint32_t kSoftRejectAndDropoutHoldMs = 450u;
+  mTrackFilter.configure(kSoftRejectAndDropoutHoldMs,
                          BuildConfig::kAnthuriumRejectedDecayPerSecond,
                          BuildConfig::kAnthuriumRejectedFloor);
 
-  const bool allowValid = (context.state == LampState::ActiveInterpretive);
+  const bool allowValid =
+      (context.state == LampState::ActiveInterpretive) || (context.state == LampState::Decay);
   const EffectiveSample sample = buildEffectiveSample(context, rich, linkStatus, allowValid);
 
   applySceneDriveSmoothing(dtSec, sample);
@@ -121,6 +123,7 @@ MapperC4001::EffectiveSample MapperC4001::buildEffectiveSample(const BehaviorCon
                                                                const PresenceC4001::LinkStatus& linkStatus,
                                                                bool allowValid) {
   EffectiveSample sample{};
+  sample.sampleClass = SampleClass::HardAbsent;
   C4001TrackFilter::InputClass inputClass = C4001TrackFilter::InputClass::HardAbsent;
 
   const bool hasTarget = (rich.targetNumber > 0);
@@ -145,9 +148,10 @@ MapperC4001::EffectiveSample MapperC4001::buildEffectiveSample(const BehaviorCon
     accepted.speedMps = mHeldSpeedMps;
     accepted.energyNorm = mHeldEnergyNorm;
     const C4001TrackFilter::Output out =
-        mTrackFilter.update(C4001TrackFilter::InputClass::Valid, context.nowMs, &accepted);
+        mTrackFilter.update(C4001TrackFilter::InputClass::Accepted, context.nowMs, &accepted);
 
     sample.valid = true;
+    sample.sampleClass = SampleClass::Accepted;
     sample.phase = out.phase;
     sample.rejectReason = 0u;
     sample.ageMs = out.ageMs;
@@ -166,12 +170,14 @@ MapperC4001::EffectiveSample MapperC4001::buildEffectiveSample(const BehaviorCon
     inputClass = C4001TrackFilter::InputClass::LinkIssue;
   } else if (hasTarget && hasRawRange) {
     inputClass = C4001TrackFilter::InputClass::SoftReject;
+    sample.sampleClass = SampleClass::SoftReject;
     sample.rejectReason = static_cast<uint8_t>(rich.targetRejectedReason);
     if (sample.rejectReason == 0u) {
       sample.rejectReason = static_cast<uint8_t>(PresenceC4001::RejectReason::NearFieldCoherence);
     }
   } else {
     inputClass = C4001TrackFilter::InputClass::HardAbsent;
+    sample.sampleClass = SampleClass::HardAbsent;
     sample.rejectReason = static_cast<uint8_t>(PresenceC4001::RejectReason::NoTarget);
   }
 

@@ -13,8 +13,15 @@ public:
                    const PresenceC4001::LinkStatus& linkStatus);
 
 private:
+  enum class SampleClass : uint8_t {
+    Accepted = 0,
+    SoftReject = 1,
+    HardAbsent = 2,
+  };
+
   struct EffectiveSample {
     bool valid;
+    SampleClass sampleClass;
     C4001TrackFilter::Phase phase;
     uint8_t rejectReason;
     uint32_t ageMs;
