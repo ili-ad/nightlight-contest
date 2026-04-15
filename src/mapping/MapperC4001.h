@@ -9,6 +9,21 @@ public:
   RenderIntent map(const BehaviorContext& context, const C4001PresenceRich& rich);
 
 private:
+  struct EffectiveSample {
+    bool valid;
+    uint8_t phase;
+    uint8_t rejectReason;
+    uint32_t ageMs;
+    float rangeM;
+    float smoothedRangeM;
+    float chargeTarget;
+    float ingressTarget;
+    float fieldTarget;
+    float energyBoostTarget;
+    float speedMps;
+    float energyNorm;
+  };
+
   struct InvalidSceneDrive {
     float targetRangeM;
     float targetSmoothedRangeM;
@@ -18,10 +33,21 @@ private:
     float energyBoostTarget;
     float speedMps;
     float energyNorm;
+    uint32_t ageMs;
     uint8_t phase;
   };
 
   InvalidSceneDrive applyInvalidSceneDrive(uint32_t nowMs) const;
+  EffectiveSample buildEffectiveSample(const BehaviorContext& context,
+                                       const C4001PresenceRich& rich,
+                                       bool allowValid);
+  void acceptValidSample(const BehaviorContext& context, const C4001PresenceRich& rich);
+  void applySceneDriveSmoothing(float dtSec, const EffectiveSample& sample);
+  RenderIntent composeSceneIntent(const BehaviorContext& context,
+                                  RenderIntent intent,
+                                  const EffectiveSample& sample,
+                                  float speedMag) const;
+  void resetSceneState();
 
   MapperShared mShared;
 

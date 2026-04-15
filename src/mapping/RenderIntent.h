@@ -40,6 +40,7 @@ struct RenderIntent {
   float sceneEnergyBoost = 0.0f;
   float sceneTargetRangeM = 0.0f;
   float sceneTargetRangeSmoothedM = 0.0f;
+  uint32_t sceneSampleAgeMs = 0;
   float sceneChargeTarget = 0.0f;
   uint8_t sceneDropoutPhase = 0;   // 0=accepted, 1=hold, 2=decay, 3=empty
   uint8_t sceneRejectReason = 0;   // latest C4001 reject code
