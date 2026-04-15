@@ -15,6 +15,29 @@ namespace {
     return value;
   }
 
+  float emaAlphaApprox(float dtSec, float tauSec) {
+    if (tauSec <= 0.001f) {
+      return 1.0f;
+    }
+    if (dtSec <= 0.0f) {
+      return 0.0f;
+    }
+    return clamp01(dtSec / (tauSec + dtSec));
+  }
+
+  float decayApprox(float dtSec, float clearSec) {
+    if (clearSec <= 0.001f) {
+      return 0.0f;
+    }
+    return clamp01(clearSec / (clearSec + dtSec));
+  }
+
+  float polynomialKernel(float distance, float width) {
+    const float safeWidth = (width < 0.001f) ? 0.001f : width;
+    const float x = clamp01(1.0f - (distance / safeWidth));
+    return x * x;
+  }
+
   uint8_t toByte(float value) {
     return static_cast<uint8_t>(clamp01(value) * 255.0f);
   }
@@ -121,9 +144,7 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
   mStableCharge = clamp01(mStableCharge);
 
   const float ingressTarget = clamp01(intent.sceneIngressLevel * (0.30f + (0.70f * mStableCharge)));
-  const float ingressAlpha = (BuildConfig::kAnthuriumIngressSmoothingSec > 0.001f)
-                                 ? (1.0f - expf(-dtSec / BuildConfig::kAnthuriumIngressSmoothingSec))
-                                 : 1.0f;
+  const float ingressAlpha = emaAlphaApprox(dtSec, BuildConfig::kAnthuriumIngressSmoothingSec);
   mSmoothedIngressLevel += (ingressTarget - mSmoothedIngressLevel) * ingressAlpha;
   mSmoothedIngressLevel = clamp01(mSmoothedIngressLevel);
 
@@ -138,7 +159,8 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
   }
 
   float temp[BuildConfig::kRingPixels] = {0.0f};
-  const float decay = expf(-dtSec / (BuildConfig::kAnthuriumTorusClearMs / 1000.0f));
+  const float clearSec = BuildConfig::kAnthuriumTorusClearMs / 1000.0f;
+  const float decay = decayApprox(dtSec, clearSec);
   const float diffusion = BuildConfig::kAnthuriumTorusDiffusionPerSecond * dtSec;
 
   for (uint16_t i = 0; i < ringCount; ++i) {
@@ -154,6 +176,7 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
   const uint16_t ingressA = BuildConfig::kAnthuriumTorusIngressA % ringCount;
   const uint16_t ingressB = BuildConfig::kAnthuriumTorusIngressB % ringCount;
   const float spread = BuildConfig::kAnthuriumTorusIngressSpread;
+  const float ingressWidth = (spread < 0.01f) ? 0.01f : (spread * 2.0f);
   const float torusInput = clamp01(mStableCharge * BuildConfig::kAnthuriumDistanceToChargeGain) * dtSec *
                            BuildConfig::kAnthuriumTorusAccumulationGain *
                            BuildConfig::kAnthuriumContinuousInjectionGain;
@@ -164,8 +187,8 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
     const float wrapDistA = (distA > (ringCount * 0.5f)) ? (ringCount - distA) : distA;
     const float wrapDistB = (distB > (ringCount * 0.5f)) ? (ringCount - distB) : distB;
 
-    const float aWeight = expf(-(wrapDistA * wrapDistA) / (2.0f * spread * spread));
-    const float bWeight = expf(-(wrapDistB * wrapDistB) / (2.0f * spread * spread));
+    const float aWeight = polynomialKernel(wrapDistA, ingressWidth);
+    const float bWeight = polynomialKernel(wrapDistB, ingressWidth);
     temp[i] = clamp01(temp[i] + (torusInput * (aWeight + bWeight)));
   }
 
@@ -205,7 +228,7 @@ float AnthuriumScene::sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenC
   }
 
   const float width = BuildConfig::kAnthuriumIngressConveyorWidth;
-  const float moving = expf(-(delta * delta) / (2.0f * width * width));
+  const float moving = polynomialKernel(delta, width);
   const float floor = mStableCharge * BuildConfig::kAnthuriumIngressFloorFromCharge;
   return clamp01(floor + (moving * mSmoothedIngressLevel));
 }
