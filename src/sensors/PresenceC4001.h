@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PresenceTypes.h"
+#include "../mapping/C4001TrackFilter.h"
 
 class PresenceC4001 {
 public:
@@ -67,11 +68,13 @@ private:
   void clearNearFieldCoherence();
 
   static float clamp01(float value);
-  static float decayTowardZero(float value, float decayPerFailure);
-  CorePresence buildCoreFromRich(const C4001PresenceRich& rich, uint32_t nowMs);
-  Snapshot applyNoTargetSuccess(const C4001PresenceRich& rich, uint32_t nowMs);
-
-  Snapshot applyFailure(uint32_t nowMs);
+  CorePresence buildCoreFromStableTrack(const C4001PresenceRich& rich, uint32_t nowMs) const;
+  C4001TrackFilter::Sample buildStableSample(const C4001PresenceRich& rich);
+  void applyStableTrack(C4001PresenceRich& rich,
+                        C4001TrackFilter::InputClass inputClass,
+                        uint32_t nowMs,
+                        const C4001TrackFilter::Sample* acceptedSample);
+  Snapshot applyFailure(uint32_t nowMs, C4001PresenceRich* richForTrack = nullptr);
   bool shouldPoll(uint32_t nowMs) const;
 
   bool initialized_ = false;
@@ -84,9 +87,6 @@ private:
   CorePresence lastCore_{};
   C4001PresenceRich lastRich_{};
 
-  float confidenceEma_ = 0.0f;
-  float distanceEma_ = 0.0f;
-  float motionEma_ = 0.0f;
   bool hasAcceptedTarget_ = false;
   uint32_t lastAcceptedTargetMs_ = 0;
   float acceptedRangeM_ = 0.0f;
@@ -95,4 +95,9 @@ private:
   uint8_t nearFieldPendingCount_ = 0;
   float nearFieldPendingRangeM_ = 0.0f;
   float nearFieldPendingSpeedMps_ = 0.0f;
+  C4001TrackFilter stableTrackFilter_{};
+  bool stableHasSmoothedRange_ = false;
+  bool stableHasChargeTarget_ = false;
+  float stableSmoothedRangeM_ = 0.0f;
+  float stableLastChargeTarget_ = 0.0f;
 };
