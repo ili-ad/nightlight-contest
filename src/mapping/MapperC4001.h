@@ -17,10 +17,6 @@ private:
   float mSmoothedRangeM = 0.0f;
   float mLastChargeTarget = 0.0f;
   float mHeldCharge = 0.0f;
-  float mHeldChargeTarget = 0.0f;
-  float mHeldIngressLevel = 0.0f;
-  float mHeldFieldLevel = 0.0f;
-  float mHeldEnergyBoost = 0.0f;
   float mHeldRangeM = 0.0f;
   float mHeldSmoothedRangeM = 0.0f;
   uint32_t mLastAcceptedSceneMs = 0;
