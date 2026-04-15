@@ -38,6 +38,8 @@ public:
     Sample sample{};
     Phase phase = Phase::Empty;
     uint32_t ageMs = 0;
+    float visibility = 0.0f;
+    float influence = 0.0f;
     bool hasTrack = false;
   };
 

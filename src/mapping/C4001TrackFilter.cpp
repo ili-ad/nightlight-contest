@@ -6,6 +6,26 @@ namespace {
 C4001TrackFilter::Output makeEmpty() {
   return {};
 }
+
+float clamp01(float value) {
+  if (value < 0.0f) {
+    return 0.0f;
+  }
+  if (value > 1.0f) {
+    return 1.0f;
+  }
+  return value;
+}
+
+float phaseInfluence(C4001TrackFilter::InputClass inputClass, float decayScale) {
+  if (inputClass == C4001TrackFilter::InputClass::Valid) {
+    return 1.0f;
+  }
+  if (inputClass == C4001TrackFilter::InputClass::SoftReject) {
+    return 0.88f;
+  }
+  return clamp01(decayScale);
+}
 }  // namespace
 
 void C4001TrackFilter::configure(uint32_t holdMs, float decayPerSecond, float decayFloor) {
@@ -36,6 +56,8 @@ C4001TrackFilter::Output C4001TrackFilter::update(InputClass inputClass,
     out.sample = mHeld;
     out.phase = Phase::Valid;
     out.ageMs = 0;
+    out.visibility = 1.0f;
+    out.influence = 1.0f;
     out.hasTrack = true;
     return out;
   }
@@ -47,10 +69,13 @@ C4001TrackFilter::Output C4001TrackFilter::update(InputClass inputClass,
   Output out;
   out.sample = mHeld;
   out.ageMs = (nowMs >= mLastAcceptedMs) ? (nowMs - mLastAcceptedMs) : 0;
+  out.visibility = 1.0f;
+  out.influence = 1.0f;
   out.hasTrack = true;
 
   if (inputClass == InputClass::SoftReject) {
     out.phase = Phase::SoftReject;
+    out.influence = phaseInfluence(inputClass, 1.0f);
     return out;
   }
 
@@ -63,8 +88,7 @@ C4001TrackFilter::Output C4001TrackFilter::update(InputClass inputClass,
   const float ageSec = static_cast<float>(out.ageMs - mHoldMs) / 1000.0f;
   const float scale = applyDecayScale(ageSec, mDecayPerSecond, mDecayFloor);
 
-  out.sample.rangeM *= scale;
-  out.sample.smoothedRangeM *= scale;
+  // Preserve range anchoring during dropout fade; only influence terms decay.
   out.sample.chargeTarget *= scale;
   out.sample.ingressTarget *= scale;
   out.sample.fieldTarget *= scale;
@@ -79,17 +103,13 @@ C4001TrackFilter::Output C4001TrackFilter::update(InputClass inputClass,
   }
 
   out.phase = Phase::Decay;
+  out.visibility = clamp01(scale);
+  out.influence = phaseInfluence(inputClass, scale);
   return out;
 }
 
 float C4001TrackFilter::clamp01(float value) {
-  if (value < 0.0f) {
-    return 0.0f;
-  }
-  if (value > 1.0f) {
-    return 1.0f;
-  }
-  return value;
+  return ::clamp01(value);
 }
 
 float C4001TrackFilter::applyDecayScale(float ageSec, float decayPerSecond, float decayFloor) {

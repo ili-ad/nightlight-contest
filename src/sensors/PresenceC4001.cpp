@@ -12,6 +12,10 @@ namespace {
   constexpr float kMotionSpeedScaleMps = 1.2f;
   constexpr float kRoomRangeNearM = 0.45f;
   constexpr float kRoomRangeFarM = 6.50f;
+  constexpr float kTakeoverNearerGainM = 0.30f;
+  constexpr float kUsefulCorridorNearM = 0.20f;
+  constexpr float kUsefulCorridorFarM = 2.20f;
+  constexpr float kUsefulCorridorDeltaAllowanceM = 0.55f;
 
   float normalizeRange(float rangeM) {
     const float span = kRoomRangeFarM - kRoomRangeNearM;
@@ -289,15 +293,16 @@ CorePresence PresenceC4001::buildCoreFromStableTrack(const C4001PresenceRich& ri
   const bool hasStableTrack = rich.stableTrackHasTrack;
   const float stableRange = hasStableTrack ? rich.stableRangeM : 0.0f;
   const float stableSpeed = hasStableTrack ? rich.stableSpeedMps : 0.0f;
+  const float stableVisibility = hasStableTrack ? clamp01(rich.stableVisibility) : 0.0f;
+  const float stableInfluence = hasStableTrack ? clamp01(rich.stableInfluence) : 0.0f;
   const float distanceNearness = hasStableTrack ? clamp01(1.0f - (stableRange / kAssumedUsefulRangeM)) : 0.0f;
   const float motion = hasStableTrack ? clamp01(fabsf(stableSpeed) / kMotionSpeedScaleMps) : 0.0f;
-  const float baseConfidence = hasStableTrack ? (0.55f + (0.30f * distanceNearness) + (0.15f * motion)) : 0.0f;
 
   core.online = linkStatus_.online;
-  core.present = hasStableTrack;
-  core.presenceConfidence = clamp01(baseConfidence);
-  core.distanceHint = distanceNearness;
-  core.motionHint = motion;
+  core.present = hasStableTrack && (stableVisibility > 0.0f);
+  core.presenceConfidence = stableInfluence;
+  core.distanceHint = distanceNearness * stableVisibility;
+  core.motionHint = motion * stableVisibility;
   core.hasAngle = rich.hasAngle;
   core.angleNorm = rich.angleNorm;
   core.lateralBias = rich.lateralBias;
@@ -355,6 +360,8 @@ void PresenceC4001::applyStableTrack(C4001PresenceRich& rich,
   rich.stableEnergyBoostTarget = stableOut.sample.energyBoostTarget;
   rich.stableSpeedMps = stableOut.sample.speedMps;
   rich.stableEnergyNorm = stableOut.sample.energyNorm;
+  rich.stableVisibility = stableOut.visibility;
+  rich.stableInfluence = stableOut.influence;
 }
 
 PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs, C4001PresenceRich* richForTrack) {
@@ -391,6 +398,8 @@ PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs, C4001Presenc
     lastRich_.stableEnergyBoostTarget = richForTrack->stableEnergyBoostTarget;
     lastRich_.stableSpeedMps = richForTrack->stableSpeedMps;
     lastRich_.stableEnergyNorm = richForTrack->stableEnergyNorm;
+    lastRich_.stableVisibility = richForTrack->stableVisibility;
+    lastRich_.stableInfluence = richForTrack->stableInfluence;
   } else {
     applyStableTrack(lastRich_, C4001TrackFilter::InputClass::LinkIssue, nowMs, nullptr);
   }
@@ -451,11 +460,25 @@ bool PresenceC4001::acceptTargetSample(const C4001PresenceRich& rawRich,
     const uint32_t dtMs = (lastAcceptedTargetMs_ == 0) ? BuildConfig::kC4001PollIntervalMs
                                                        : (nowMs - lastAcceptedTargetMs_);
     const float dtSec = static_cast<float>((dtMs == 0) ? 1 : dtMs) / 1000.0f;
-    const float maxDelta = BuildConfig::kC4001MaxAcceptedRangeDeltaPerSecond * dtSec;
+    float maxDelta = BuildConfig::kC4001MaxAcceptedRangeDeltaPerSecond * dtSec;
+    const bool candidateInUsefulCorridor =
+        (rawRich.targetRangeM >= kUsefulCorridorNearM) && (rawRich.targetRangeM <= kUsefulCorridorFarM);
+    const bool acceptedInUsefulCorridor =
+        (acceptedRangeM_ >= kUsefulCorridorNearM) && (acceptedRangeM_ <= kUsefulCorridorFarM);
+    if (candidateInUsefulCorridor || acceptedInUsefulCorridor) {
+      maxDelta += kUsefulCorridorDeltaAllowanceM;
+    }
     const float delta = fabsf(rawRich.targetRangeM - acceptedRangeM_);
+    const bool nearerTakeover =
+        (rawRich.targetRangeM < acceptedRangeM_) &&
+        ((acceptedRangeM_ - rawRich.targetRangeM) >= kTakeoverNearerGainM);
     if (delta > maxDelta) {
-      reason = RejectReason::RangeDelta;
-      return false;
+      if (nearerTakeover) {
+        clearNearFieldCoherence();
+      } else {
+        reason = RejectReason::RangeDelta;
+        return false;
+      }
     }
   }
 

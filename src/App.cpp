@@ -105,11 +105,11 @@ namespace {
     switch (state) {
       case LampState::BootAnimation:
       case LampState::InterludeGlitch:
+      case LampState::ActiveInterpretive:
+      case LampState::Decay:
         return false;
       case LampState::DayDormant:
       case LampState::NightIdle:
-      case LampState::ActiveInterpretive:
-      case LampState::Decay:
       case LampState::FaultSafe:
       default:
         return true;
