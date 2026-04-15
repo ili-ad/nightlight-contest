@@ -56,4 +56,17 @@ struct C4001PresenceRich {
   bool hasAngle = false;
   float angleNorm = 0.0f;    // Suggested placeholder range 0..1.
   float lateralBias = 0.0f;  // Suggested placeholder range -1..1.
+
+  // Upstream stable-track output (owned by PresenceC4001 lifecycle).
+  bool stableTrackHasTrack = false;
+  uint8_t stableTrackPhase = 0;
+  uint32_t stableTrackAgeMs = 0;
+  float stableRangeM = 0.0f;
+  float stableSmoothedRangeM = 0.0f;
+  float stableChargeTarget = 0.0f;
+  float stableIngressTarget = 0.0f;
+  float stableFieldTarget = 0.0f;
+  float stableEnergyBoostTarget = 0.0f;
+  float stableSpeedMps = 0.0f;
+  float stableEnergyNorm = 0.0f;
 };

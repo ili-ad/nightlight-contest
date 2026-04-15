@@ -2,11 +2,7 @@
 
 #include <math.h>
 
-#include "../BuildConfig.h"
-
 namespace {
-constexpr float kRoomRangeNearM = 0.45f;
-constexpr float kRoomRangeFarM = 6.50f;
 constexpr float kSpeedStillThresholdMps = 0.08f;
 
 float clamp01(float value) {
@@ -19,50 +15,8 @@ float clamp01(float value) {
   return value;
 }
 
-float normalizeRange(float rangeM) {
-  const float span = kRoomRangeFarM - kRoomRangeNearM;
-  if (span <= 0.0f) {
-    return 0.5f;
-  }
-  return clamp01((rangeM - kRoomRangeNearM) / span);
-}
-
-float normalizeEnergy(int energy) {
-  return clamp01(static_cast<float>(energy) / 100.0f);
-}
-
 float normalizeSpeedMag(float speedMps) {
   return clamp01(fabsf(speedMps) / 1.50f);
-}
-
-float clampDelta(float previous, float target, float maxDelta) {
-  if (target > previous + maxDelta) {
-    return previous + maxDelta;
-  }
-  if (target < previous - maxDelta) {
-    return previous - maxDelta;
-  }
-  return target;
-}
-
-float chargeAtRange(float rangeM) {
-  const float nearness = clamp01(1.0f - normalizeRange(rangeM));
-  return clamp01(nearness * BuildConfig::kAnthuriumDistanceToChargeGain);
-}
-
-float mappedChargeFromRange(float rangeM) {
-  const float clampedRange = (rangeM < 0.0f) ? 0.0f : rangeM;
-  const float baseCharge = chargeAtRange(clampedRange);
-  const float nearStart = BuildConfig::kAnthuriumNearFieldCompressionStartM;
-  if (nearStart <= 0.001f || clampedRange >= nearStart) {
-    return baseCharge;
-  }
-
-  const float startCharge = chargeAtRange(nearStart);
-  const float t = clamp01((nearStart - clampedRange) / nearStart);
-  const float eased = t * t * (3.0f - 2.0f * t);
-  const float nearCharge = startCharge + ((1.0f - startCharge) * eased);
-  return clamp01((nearCharge > baseCharge) ? nearCharge : baseCharge);
 }
 
 float safeDeltaSec(uint32_t nowMs, uint32_t previousMs) {
@@ -103,11 +57,6 @@ RenderIntent MapperC4001::map(const BehaviorContext& context,
   const float dtSec = safeDeltaSec(context.nowMs, mLastSceneUpdateMs);
   mLastSceneUpdateMs = context.nowMs;
 
-  constexpr uint32_t kSoftRejectAndDropoutHoldMs = 450u;
-  mTrackFilter.configure(kSoftRejectAndDropoutHoldMs,
-                         BuildConfig::kAnthuriumRejectedDecayPerSecond,
-                         BuildConfig::kAnthuriumRejectedFloor);
-
   const bool allowValid =
       (context.state == LampState::ActiveInterpretive) || (context.state == LampState::Decay);
   const EffectiveSample sample = buildEffectiveSample(context, rich, linkStatus, allowValid);
@@ -124,108 +73,36 @@ MapperC4001::EffectiveSample MapperC4001::buildEffectiveSample(const BehaviorCon
                                                                bool allowValid) {
   EffectiveSample sample{};
   sample.sampleClass = SampleClass::HardAbsent;
-  C4001TrackFilter::InputClass inputClass = C4001TrackFilter::InputClass::HardAbsent;
+  sample.valid = allowValid && rich.stableTrackHasTrack;
+  sample.phase = static_cast<C4001TrackFilter::Phase>(rich.stableTrackPhase);
+  sample.ageMs = rich.stableTrackAgeMs;
+  sample.rangeM = rich.stableRangeM;
+  sample.smoothedRangeM = rich.stableSmoothedRangeM;
+  sample.chargeTarget = rich.stableChargeTarget;
+  sample.ingressTarget = rich.stableIngressTarget;
+  sample.fieldTarget = rich.stableFieldTarget;
+  sample.energyBoostTarget = rich.stableEnergyBoostTarget;
+  sample.speedMps = rich.stableSpeedMps;
+  sample.energyNorm = rich.stableEnergyNorm;
+  sample.rejectReason = static_cast<uint8_t>(rich.targetRejectedReason);
 
-  const bool hasTarget = (rich.targetNumber > 0);
-  const bool hasRawRange = (rich.targetRangeRawM > 0.0f) &&
-                           (rich.targetRangeRawM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
-  const bool hasAcceptedRange = (rich.targetRangeM > 0.0f) &&
-                                (rich.targetRangeM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
-  const bool hasLinkIssue = (linkStatus.state == PresenceC4001::LinkState::Offline) ||
-                            (linkStatus.sampleKind == PresenceC4001::SampleKind::ReadFailure);
-
-  if (allowValid && hasTarget && hasRawRange && hasAcceptedRange &&
-      rich.targetSampleAccepted && (rich.targetRejectedReason == 0u)) {
-    acceptValidSample(context, rich);
-
-    C4001TrackFilter::Sample accepted{};
-    accepted.rangeM = mHeldRangeM;
-    accepted.smoothedRangeM = mHeldSmoothedRangeM;
-    accepted.chargeTarget = mHeldCharge;
-    accepted.ingressTarget = mHeldIngressLevel;
-    accepted.fieldTarget = mHeldFieldLevel;
-    accepted.energyBoostTarget = mHeldEnergyBoost;
-    accepted.speedMps = mHeldSpeedMps;
-    accepted.energyNorm = mHeldEnergyNorm;
-    const C4001TrackFilter::Output out =
-        mTrackFilter.update(C4001TrackFilter::InputClass::Accepted, context.nowMs, &accepted);
-
-    sample.valid = true;
+  if (rich.targetSampleAccepted && sample.valid) {
     sample.sampleClass = SampleClass::Accepted;
-    sample.phase = out.phase;
     sample.rejectReason = 0u;
-    sample.ageMs = out.ageMs;
-    sample.rangeM = out.sample.rangeM;
-    sample.smoothedRangeM = out.sample.smoothedRangeM;
-    sample.chargeTarget = out.sample.chargeTarget;
-    sample.ingressTarget = out.sample.ingressTarget;
-    sample.fieldTarget = out.sample.fieldTarget;
-    sample.energyBoostTarget = out.sample.energyBoostTarget;
-    sample.speedMps = out.sample.speedMps;
-    sample.energyNorm = out.sample.energyNorm;
-    return sample;
-  }
-
-  if (hasLinkIssue) {
-    inputClass = C4001TrackFilter::InputClass::LinkIssue;
-  } else if (hasTarget && hasRawRange) {
-    inputClass = C4001TrackFilter::InputClass::SoftReject;
+  } else if ((linkStatus.sampleKind == PresenceC4001::SampleKind::ReadFailure) ||
+             (linkStatus.state == PresenceC4001::LinkState::Offline)) {
+    sample.sampleClass = SampleClass::HardAbsent;
+    sample.rejectReason = static_cast<uint8_t>(PresenceC4001::RejectReason::NoTarget);
+  } else if (rich.targetNumber > 0) {
     sample.sampleClass = SampleClass::SoftReject;
-    sample.rejectReason = static_cast<uint8_t>(rich.targetRejectedReason);
     if (sample.rejectReason == 0u) {
       sample.rejectReason = static_cast<uint8_t>(PresenceC4001::RejectReason::NearFieldCoherence);
     }
   } else {
-    inputClass = C4001TrackFilter::InputClass::HardAbsent;
     sample.sampleClass = SampleClass::HardAbsent;
     sample.rejectReason = static_cast<uint8_t>(PresenceC4001::RejectReason::NoTarget);
   }
-
-  const C4001TrackFilter::Output out = mTrackFilter.update(inputClass, context.nowMs, nullptr);
-  sample.valid = false;
-  sample.phase = out.phase;
-  sample.ageMs = out.ageMs;
-  sample.rangeM = out.sample.rangeM;
-  sample.smoothedRangeM = out.sample.smoothedRangeM;
-  sample.chargeTarget = out.sample.chargeTarget;
-  sample.ingressTarget = out.sample.ingressTarget;
-  sample.fieldTarget = out.sample.fieldTarget;
-  sample.energyBoostTarget = out.sample.energyBoostTarget;
-  sample.speedMps = out.sample.speedMps;
-  sample.energyNorm = out.sample.energyNorm;
   return sample;
-}
-
-void MapperC4001::acceptValidSample(const BehaviorContext& context,
-                                    const C4001PresenceRich& rich) {
-  if (!mHasSmoothedRange) {
-    mSmoothedRangeM = rich.targetRangeM;
-    mHasSmoothedRange = true;
-  } else {
-    const float rangeAlpha = clamp01(BuildConfig::kAnthuriumRangeSmoothingAlpha);
-    mSmoothedRangeM += (rich.targetRangeM - mSmoothedRangeM) * rangeAlpha;
-  }
-
-  float chargeTarget = mappedChargeFromRange(mSmoothedRangeM);
-  if (mHasChargeTarget && (mSmoothedRangeM <= BuildConfig::kAnthuriumNearFieldCompressionStartM)) {
-    const float maxStep =
-        (BuildConfig::kAnthuriumNearFieldChargeTargetMaxDeltaPerUpdate < 0.001f)
-            ? 0.001f
-            : BuildConfig::kAnthuriumNearFieldChargeTargetMaxDeltaPerUpdate;
-    chargeTarget = clampDelta(mLastChargeTarget, chargeTarget, maxStep);
-  }
-  mHasChargeTarget = true;
-  mLastChargeTarget = chargeTarget;
-
-  mHeldCharge = chargeTarget;
-  mHeldIngressLevel = clamp01(BuildConfig::kAnthuriumIngressBaseLevel + (chargeTarget * 0.75f));
-  mHeldFieldLevel = clamp01(BuildConfig::kAnthuriumTorusFieldBaseLevel + (chargeTarget * 0.85f));
-  mHeldEnergyNorm = normalizeEnergy(rich.targetEnergy);
-  mHeldEnergyBoost = clamp01(mHeldEnergyNorm * BuildConfig::kAnthuriumEnergyWhiteBoostGain);
-  mHeldSpeedMps = rich.targetSpeedMps;
-  mHeldRangeM = rich.targetRangeM;
-  mHeldSmoothedRangeM = mSmoothedRangeM;
-  (void)context;
 }
 
 void MapperC4001::applySceneDriveSmoothing(float dtSec, const EffectiveSample& sample) {
@@ -296,10 +173,7 @@ RenderIntent MapperC4001::composeSceneIntent(const BehaviorContext& context,
 }
 
 void MapperC4001::resetSceneState() {
-  mHasSmoothedRange = false;
-  mHasChargeTarget = false;
   mHasSceneDriveState = false;
   mLastSceneUpdateMs = 0;
   mSceneEnergyBoost = 0.0f;
-  mTrackFilter.reset();
 }

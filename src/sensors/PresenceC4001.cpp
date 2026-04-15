@@ -10,9 +10,75 @@
 namespace {
   constexpr float kAssumedUsefulRangeM = 6.0f;
   constexpr float kMotionSpeedScaleMps = 1.2f;
+  constexpr float kRoomRangeNearM = 0.45f;
+  constexpr float kRoomRangeFarM = 6.50f;
 
-  float ema(float prev, float input, float alpha) {
-    return prev + ((input - prev) * alpha);
+  float normalizeRange(float rangeM) {
+    const float span = kRoomRangeFarM - kRoomRangeNearM;
+    if (span <= 0.0f) {
+      return 0.5f;
+    }
+    const float normalized = (rangeM - kRoomRangeNearM) / span;
+    if (normalized < 0.0f) {
+      return 0.0f;
+    }
+    if (normalized > 1.0f) {
+      return 1.0f;
+    }
+    return normalized;
+  }
+
+  float normalizeEnergy(int energy) {
+    const float normalized = static_cast<float>(energy) / 100.0f;
+    if (normalized < 0.0f) {
+      return 0.0f;
+    }
+    if (normalized > 1.0f) {
+      return 1.0f;
+    }
+    return normalized;
+  }
+
+  float chargeAtRange(float rangeM) {
+    const float nearness = 1.0f - normalizeRange(rangeM);
+    const float charge = nearness * BuildConfig::kAnthuriumDistanceToChargeGain;
+    if (charge < 0.0f) {
+      return 0.0f;
+    }
+    if (charge > 1.0f) {
+      return 1.0f;
+    }
+    return charge;
+  }
+
+  float mappedChargeFromRange(float rangeM) {
+    const float clampedRange = (rangeM < 0.0f) ? 0.0f : rangeM;
+    const float baseCharge = chargeAtRange(clampedRange);
+    const float nearStart = BuildConfig::kAnthuriumNearFieldCompressionStartM;
+    if (nearStart <= 0.001f || clampedRange >= nearStart) {
+      return baseCharge;
+    }
+
+    const float startCharge = chargeAtRange(nearStart);
+    float t = (nearStart - clampedRange) / nearStart;
+    if (t < 0.0f) {
+      t = 0.0f;
+    } else if (t > 1.0f) {
+      t = 1.0f;
+    }
+    const float eased = t * t * (3.0f - 2.0f * t);
+    const float nearCharge = startCharge + ((1.0f - startCharge) * eased);
+    return (nearCharge > baseCharge) ? nearCharge : baseCharge;
+  }
+
+  float clampDelta(float previous, float target, float maxDelta) {
+    if (target > previous + maxDelta) {
+      return previous + maxDelta;
+    }
+    if (target < previous - maxDelta) {
+      return previous - maxDelta;
+    }
+    return target;
   }
 }
 
@@ -27,13 +93,18 @@ void PresenceC4001::begin() {
   lastInitAttemptMs_ = 0;
   hasPolled_ = false;
   sensorReady_ = false;
-  confidenceEma_ = 0.0f;
-  distanceEma_ = 0.0f;
-  motionEma_ = 0.0f;
   hasAcceptedTarget_ = false;
   lastAcceptedTargetMs_ = 0;
   acceptedRangeM_ = 0.0f;
   acceptedSpeedMps_ = 0.0f;
+  stableTrackFilter_.reset();
+  stableTrackFilter_.configure(BuildConfig::kC4001DropoutHoldMs,
+                               BuildConfig::kAnthuriumRejectedDecayPerSecond,
+                               BuildConfig::kAnthuriumRejectedFloor);
+  stableHasSmoothedRange_ = false;
+  stableHasChargeTarget_ = false;
+  stableSmoothedRangeM_ = 0.0f;
+  stableLastChargeTarget_ = 0.0f;
   clearNearFieldCoherence();
   lastCore_ = {};
   lastRich_ = {};
@@ -91,7 +162,17 @@ PresenceC4001::Snapshot PresenceC4001::read() {
     if (rich.targetNumber <= 0) {
       linkStatus_.nearField = false;
       clearNearFieldCoherence();
-      return applyNoTargetSuccess(rich, nowMs);
+      ++linkStatus_.consecutiveNoTargetSamples;
+      if (linkStatus_.noTargetSinceMs == 0) {
+        linkStatus_.noTargetSinceMs = nowMs;
+      }
+      linkStatus_.noTargetHolding = false;
+      linkStatus_.noTargetCommitted = true;
+      applyStableTrack(rich, C4001TrackFilter::InputClass::HardAbsent, nowMs, nullptr);
+      CorePresence core = buildCoreFromStableTrack(rich, nowMs);
+      lastRich_ = rich;
+      lastCore_ = core;
+      return {core, rich};
     }
 
     linkStatus_.consecutiveNoTargetSamples = 0;
@@ -127,15 +208,19 @@ PresenceC4001::Snapshot PresenceC4001::read() {
       lastAcceptedTargetMs_ = nowMs;
       acceptedRangeM_ = acceptedRangeM;
       acceptedSpeedMps_ = acceptedSpeedMps;
+      const C4001TrackFilter::Sample stableSample = buildStableSample(rich);
+      applyStableTrack(rich, C4001TrackFilter::InputClass::Accepted, nowMs, &stableSample);
+    } else {
+      applyStableTrack(rich, C4001TrackFilter::InputClass::SoftReject, nowMs, nullptr);
     }
 
-    CorePresence core = buildCoreFromRich(rich, nowMs);
+    CorePresence core = buildCoreFromStableTrack(rich, nowMs);
     lastRich_ = rich;
     lastCore_ = core;
     return {core, rich};
   }
 
-  return applyFailure(nowMs);
+  return applyFailure(nowMs, &rich);
 }
 
 const C4001PresenceRich& PresenceC4001::lastRich() const {
@@ -199,33 +284,20 @@ float PresenceC4001::clamp01(float value) {
   return value;
 }
 
-float PresenceC4001::decayTowardZero(float value, float decayPerFailure) {
-  return clamp01(value * (1.0f - decayPerFailure));
-}
-
-CorePresence PresenceC4001::buildCoreFromRich(const C4001PresenceRich& rich, uint32_t nowMs) {
+CorePresence PresenceC4001::buildCoreFromStableTrack(const C4001PresenceRich& rich, uint32_t nowMs) const {
   CorePresence core{};
+  const bool hasStableTrack = rich.stableTrackHasTrack;
+  const float stableRange = hasStableTrack ? rich.stableRangeM : 0.0f;
+  const float stableSpeed = hasStableTrack ? rich.stableSpeedMps : 0.0f;
+  const float distanceNearness = hasStableTrack ? clamp01(1.0f - (stableRange / kAssumedUsefulRangeM)) : 0.0f;
+  const float motion = hasStableTrack ? clamp01(fabsf(stableSpeed) / kMotionSpeedScaleMps) : 0.0f;
+  const float baseConfidence = hasStableTrack ? (0.55f + (0.30f * distanceNearness) + (0.15f * motion)) : 0.0f;
 
-  const bool targetSeen = (rich.targetNumber > 0);
-  float distanceNearness = 0.0f;
-  float motion = 0.0f;
-  if (targetSeen) {
-    distanceNearness = clamp01(1.0f - (rich.targetRangeM / kAssumedUsefulRangeM));
-    const float speedAbs = fabsf(rich.targetSpeedMps);
-    motion = clamp01(speedAbs / kMotionSpeedScaleMps);
-  }
-
-  const float baseConfidence = targetSeen ? (0.55f + (0.30f * distanceNearness) + (0.15f * motion)) : 0.0f;
-
-  confidenceEma_ = ema(confidenceEma_, clamp01(baseConfidence), BuildConfig::kC4001ConfidenceEmaAlpha);
-  distanceEma_ = ema(distanceEma_, distanceNearness, BuildConfig::kC4001DistanceEmaAlpha);
-  motionEma_ = ema(motionEma_, motion, BuildConfig::kC4001MotionEmaAlpha);
-
-  core.online = true;
-  core.present = targetSeen;
-  core.presenceConfidence = confidenceEma_;
-  core.distanceHint = distanceEma_;
-  core.motionHint = motionEma_;
+  core.online = linkStatus_.online;
+  core.present = hasStableTrack;
+  core.presenceConfidence = clamp01(baseConfidence);
+  core.distanceHint = distanceNearness;
+  core.motionHint = motion;
   core.hasAngle = rich.hasAngle;
   core.angleNorm = rich.angleNorm;
   core.lateralBias = rich.lateralBias;
@@ -234,56 +306,58 @@ CorePresence PresenceC4001::buildCoreFromRich(const C4001PresenceRich& rich, uin
   return core;
 }
 
-PresenceC4001::Snapshot PresenceC4001::applyNoTargetSuccess(const C4001PresenceRich& rich,
-                                                            uint32_t nowMs) {
-  CorePresence core = lastCore_;
-  lastRich_ = rich;
-  lastRich_.targetSampleAccepted = false;
-  lastRich_.targetRejectedReason = static_cast<uint8_t>(RejectReason::NoTarget);
-
-  ++linkStatus_.consecutiveNoTargetSamples;
-  if (linkStatus_.noTargetSinceMs == 0) {
-    linkStatus_.noTargetSinceMs = nowMs;
-  }
-
-  const uint32_t msSinceLastTarget =
-      (linkStatus_.lastTargetMs == 0) ? 0xFFFFFFFFu : (nowMs - linkStatus_.lastTargetMs);
-  const uint32_t noTargetDurationMs = nowMs - linkStatus_.noTargetSinceMs;
-  const bool withinNoTargetGrace =
-      (linkStatus_.lastTargetMs != 0) && (msSinceLastTarget <= BuildConfig::kC4001NoTargetGraceMs);
-  const bool sustainedNoTarget =
-      (linkStatus_.consecutiveNoTargetSamples >= BuildConfig::kC4001NoTargetRequiredConsecutiveSamples) &&
-      (noTargetDurationMs >= BuildConfig::kC4001NoTargetRequiredWindowMs);
-
-  linkStatus_.noTargetHolding = withinNoTargetGrace;
-  linkStatus_.noTargetCommitted = !withinNoTargetGrace && sustainedNoTarget;
-
-  const float decay = withinNoTargetGrace ? BuildConfig::kC4001NoTargetGraceDecayPerSample
-                                          : BuildConfig::kC4001NoTargetDecayPerSample;
-
-  core.online = true;
-  core.presenceConfidence = decayTowardZero(core.presenceConfidence, decay);
-  core.distanceHint = decayTowardZero(core.distanceHint, decay);
-  core.motionHint = decayTowardZero(core.motionHint, decay);
-  core.timestampMs = nowMs;
-
-  if (linkStatus_.noTargetCommitted) {
-    core.present = false;
-    core.presenceConfidence = 0.0f;
-    core.distanceHint = 0.0f;
-    core.motionHint = 0.0f;
+C4001TrackFilter::Sample PresenceC4001::buildStableSample(const C4001PresenceRich& rich) {
+  C4001TrackFilter::Sample sample{};
+  if (!stableHasSmoothedRange_) {
+    stableSmoothedRangeM_ = rich.targetRangeM;
+    stableHasSmoothedRange_ = true;
   } else {
-    core.present = withinNoTargetGrace || (core.presenceConfidence > BuildConfig::kPresenceExitThreshold);
+    const float rangeAlpha = clamp01(BuildConfig::kAnthuriumRangeSmoothingAlpha);
+    stableSmoothedRangeM_ += (rich.targetRangeM - stableSmoothedRangeM_) * rangeAlpha;
   }
 
-  confidenceEma_ = core.presenceConfidence;
-  distanceEma_ = core.distanceHint;
-  motionEma_ = core.motionHint;
-  lastCore_ = core;
-  return {core, rich};
+  float chargeTarget = mappedChargeFromRange(stableSmoothedRangeM_);
+  if (stableHasChargeTarget_ &&
+      (stableSmoothedRangeM_ <= BuildConfig::kAnthuriumNearFieldCompressionStartM)) {
+    const float maxStep =
+        (BuildConfig::kAnthuriumNearFieldChargeTargetMaxDeltaPerUpdate < 0.001f)
+            ? 0.001f
+            : BuildConfig::kAnthuriumNearFieldChargeTargetMaxDeltaPerUpdate;
+    chargeTarget = clampDelta(stableLastChargeTarget_, chargeTarget, maxStep);
+  }
+  stableHasChargeTarget_ = true;
+  stableLastChargeTarget_ = chargeTarget;
+
+  sample.rangeM = rich.targetRangeM;
+  sample.smoothedRangeM = stableSmoothedRangeM_;
+  sample.chargeTarget = chargeTarget;
+  sample.ingressTarget = clamp01(BuildConfig::kAnthuriumIngressBaseLevel + (chargeTarget * 0.75f));
+  sample.fieldTarget = clamp01(BuildConfig::kAnthuriumTorusFieldBaseLevel + (chargeTarget * 0.85f));
+  sample.energyNorm = normalizeEnergy(rich.targetEnergy);
+  sample.energyBoostTarget = clamp01(sample.energyNorm * BuildConfig::kAnthuriumEnergyWhiteBoostGain);
+  sample.speedMps = rich.targetSpeedMps;
+  return sample;
 }
 
-PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
+void PresenceC4001::applyStableTrack(C4001PresenceRich& rich,
+                                     C4001TrackFilter::InputClass inputClass,
+                                     uint32_t nowMs,
+                                     const C4001TrackFilter::Sample* acceptedSample) {
+  const C4001TrackFilter::Output stableOut = stableTrackFilter_.update(inputClass, nowMs, acceptedSample);
+  rich.stableTrackHasTrack = stableOut.hasTrack;
+  rich.stableTrackPhase = static_cast<uint8_t>(stableOut.phase);
+  rich.stableTrackAgeMs = stableOut.ageMs;
+  rich.stableRangeM = stableOut.sample.rangeM;
+  rich.stableSmoothedRangeM = stableOut.sample.smoothedRangeM;
+  rich.stableChargeTarget = stableOut.sample.chargeTarget;
+  rich.stableIngressTarget = stableOut.sample.ingressTarget;
+  rich.stableFieldTarget = stableOut.sample.fieldTarget;
+  rich.stableEnergyBoostTarget = stableOut.sample.energyBoostTarget;
+  rich.stableSpeedMps = stableOut.sample.speedMps;
+  rich.stableEnergyNorm = stableOut.sample.energyNorm;
+}
+
+PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs, C4001PresenceRich* richForTrack) {
   ++linkStatus_.consecutiveFailures;
   linkStatus_.lastFailureMs = nowMs;
   linkStatus_.lastSampleMs = nowMs;
@@ -304,7 +378,24 @@ PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
   lastRich_.targetRejectedReason = static_cast<uint8_t>(RejectReason::NoTarget);
   clearNearFieldCoherence();
 
-  CorePresence held = lastCore_;
+  if (richForTrack != nullptr) {
+    applyStableTrack(*richForTrack, C4001TrackFilter::InputClass::LinkIssue, nowMs, nullptr);
+    lastRich_.stableTrackHasTrack = richForTrack->stableTrackHasTrack;
+    lastRich_.stableTrackPhase = richForTrack->stableTrackPhase;
+    lastRich_.stableTrackAgeMs = richForTrack->stableTrackAgeMs;
+    lastRich_.stableRangeM = richForTrack->stableRangeM;
+    lastRich_.stableSmoothedRangeM = richForTrack->stableSmoothedRangeM;
+    lastRich_.stableChargeTarget = richForTrack->stableChargeTarget;
+    lastRich_.stableIngressTarget = richForTrack->stableIngressTarget;
+    lastRich_.stableFieldTarget = richForTrack->stableFieldTarget;
+    lastRich_.stableEnergyBoostTarget = richForTrack->stableEnergyBoostTarget;
+    lastRich_.stableSpeedMps = richForTrack->stableSpeedMps;
+    lastRich_.stableEnergyNorm = richForTrack->stableEnergyNorm;
+  } else {
+    applyStableTrack(lastRich_, C4001TrackFilter::InputClass::LinkIssue, nowMs, nullptr);
+  }
+
+  CorePresence held = buildCoreFromStableTrack(lastRich_, nowMs);
   const uint32_t msSinceSuccess =
       (linkStatus_.lastSuccessMs == 0) ? 0xFFFFFFFFu : (nowMs - linkStatus_.lastSuccessMs);
   const bool withinHold = (msSinceSuccess <= BuildConfig::kC4001DropoutHoldMs);
@@ -316,25 +407,11 @@ PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
   if (withinHold) {
     held.online = linkStatus_.online;
     held.timestampMs = nowMs;
-    held.presenceConfidence = decayTowardZero(held.presenceConfidence, BuildConfig::kC4001ConfidenceDecayPerFailure);
-    held.distanceHint = decayTowardZero(held.distanceHint, BuildConfig::kC4001DistanceDecayPerFailure);
-    held.motionHint = decayTowardZero(held.motionHint, BuildConfig::kC4001MotionDecayPerFailure);
-
-    if (held.presenceConfidence <= BuildConfig::kPresenceExitThreshold) {
-      held.present = false;
-    }
     lastCore_ = held;
-    confidenceEma_ = held.presenceConfidence;
-    distanceEma_ = held.distanceHint;
-    motionEma_ = held.motionHint;
     return {held, lastRich_};
   }
 
   held.online = linkStatus_.online;
-  held.presenceConfidence = decayTowardZero(held.presenceConfidence, BuildConfig::kC4001ConfidenceDecayPerFailure);
-  held.distanceHint = decayTowardZero(held.distanceHint, BuildConfig::kC4001DistanceDecayPerFailure);
-  held.motionHint = decayTowardZero(held.motionHint, BuildConfig::kC4001MotionDecayPerFailure);
-  held.present = (held.presenceConfidence > BuildConfig::kPresenceExitThreshold);
   held.timestampMs = nowMs;
 
   if (forceEmpty) {
@@ -346,10 +423,6 @@ PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
     linkStatus_.holding = false;
     linkStatus_.state = LinkState::Offline;
   }
-
-  confidenceEma_ = held.presenceConfidence;
-  distanceEma_ = held.distanceHint;
-  motionEma_ = held.motionHint;
 
   lastCore_ = held;
   return {held, lastRich_};
