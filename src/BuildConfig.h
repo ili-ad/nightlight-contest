@@ -88,7 +88,6 @@ namespace BuildConfig {
   constexpr bool kEnableInterludes = true;
   constexpr bool kEnableTelemetry = (TELEM_PROFILE != TELEM_NONE);
   constexpr uint8_t kTelemetryProfile = TELEM_PROFILE;
-  constexpr uint32_t kTelemetryOfflineLogIntervalMs = 250;
   constexpr uint32_t kTelemetryPresenceLogIntervalMs = 500;
 
   constexpr uint32_t kBootAnimationMs = 1800;
