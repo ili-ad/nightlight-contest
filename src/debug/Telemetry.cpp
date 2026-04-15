@@ -4,36 +4,6 @@
 
 #include "../BuildConfig.h"
 
-namespace {
-#if TELEM_PROFILE >= TELEM_MINIMAL
-const char* linkStateCode(PresenceC4001::LinkState state) {
-  switch (state) {
-    case PresenceC4001::LinkState::Online:
-      return "on";
-    case PresenceC4001::LinkState::DegradedHold:
-      return "dg";
-    case PresenceC4001::LinkState::Offline:
-    default:
-      return "off";
-  }
-}
-
-const char* sampleKindCode(PresenceC4001::SampleKind kind) {
-  switch (kind) {
-    case PresenceC4001::SampleKind::Target:
-      return "tg";
-    case PresenceC4001::SampleKind::NoTarget:
-      return "nt";
-    case PresenceC4001::SampleKind::ReadFailure:
-      return "rf";
-    case PresenceC4001::SampleKind::Unknown:
-    default:
-      return "uk";
-  }
-}
-#endif
-}  // namespace
-
 void Telemetry::begin() {
 #if TELEM_PROFILE != TELEM_NONE
   Serial.begin(115200);
@@ -43,27 +13,6 @@ void Telemetry::begin() {
   mHasLastLinkState = false;
   mLastLinkState = PresenceC4001::LinkState::Offline;
   mLastS27LogMs = 0;
-}
-
-const char* Telemetry::stateCode(LampState state) {
-  switch (state) {
-    case LampState::BootAnimation:
-      return "BT";
-    case LampState::DayDormant:
-      return "DD";
-    case LampState::NightIdle:
-      return "NI";
-    case LampState::ActiveInterpretive:
-      return "AI";
-    case LampState::Decay:
-      return "DC";
-    case LampState::InterludeGlitch:
-      return "IG";
-    case LampState::FaultSafe:
-      return "FS";
-    default:
-      return "UK";
-  }
 }
 
 void Telemetry::update(const LampStateMachine& stateMachine,
@@ -130,10 +79,6 @@ void Telemetry::update(const LampStateMachine& stateMachine,
     Serial.print(intent.sceneCharge, 3);
     Serial.print(" ig=");
     Serial.print(intent.sceneIngressLevel, 3);
-    Serial.print(" tn=");
-    Serial.print(c4001Rich.targetNumber);
-    Serial.print(" sk=");
-    Serial.print(sampleKindCode(c4001LinkStatus.sampleKind));
     Serial.print(" rj=");
     Serial.println(rejectCode);
   }
