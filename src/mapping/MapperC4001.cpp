@@ -58,11 +58,7 @@ namespace {
 
     const float startCharge = chargeAtRange(nearStart);
     const float t = clamp01((nearStart - clampedRange) / nearStart);
-    const float exponent =
-        (BuildConfig::kAnthuriumNearFieldCompressionExponent < 1.0f)
-            ? 1.0f
-            : BuildConfig::kAnthuriumNearFieldCompressionExponent;
-    const float eased = powf(t, exponent);
+    const float eased = t * t;
     const float nearCharge = startCharge + ((1.0f - startCharge) * eased);
     return clamp01((nearCharge > baseCharge) ? nearCharge : baseCharge);
   }
