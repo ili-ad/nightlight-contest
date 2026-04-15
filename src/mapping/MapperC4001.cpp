@@ -58,11 +58,7 @@ namespace {
 
     const float startCharge = chargeAtRange(nearStart);
     const float t = clamp01((nearStart - clampedRange) / nearStart);
-    const float exponent =
-        (BuildConfig::kAnthuriumNearFieldCompressionExponent < 1.0f)
-            ? 1.0f
-            : BuildConfig::kAnthuriumNearFieldCompressionExponent;
-    const float eased = powf(t, exponent);
+    const float eased = t * t;
     const float nearCharge = startCharge + ((1.0f - startCharge) * eased);
     return clamp01((nearCharge > baseCharge) ? nearCharge : baseCharge);
   }
@@ -71,14 +67,18 @@ namespace {
     if (value <= 0.0f) {
       return 0.0f;
     }
-    const float decayRate = (BuildConfig::kAnthuriumRejectedDecayPerSecond <= 0.0f)
-                                ? 0.0f
-                                : BuildConfig::kAnthuriumRejectedDecayPerSecond;
+    const float decayRate =
+        (BuildConfig::kAnthuriumRejectedDecayPerSecond <= 0.0f)
+            ? 0.0f
+            : BuildConfig::kAnthuriumRejectedDecayPerSecond;
     if (decayRate <= 0.0f || ageSec <= 0.0f) {
       return value;
     }
-    const float decayed = value * expf(-decayRate * ageSec);
     const float floor = clamp01(BuildConfig::kAnthuriumRejectedFloor);
+    const float decayed = value - (ageSec * decayRate);
+    if (decayed > value) {
+      return value;
+    }
     return (decayed <= floor) ? 0.0f : decayed;
   }
 }
@@ -97,14 +97,15 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
         const bool withinHold = ageMs <= BuildConfig::kAnthuriumRejectedHoldMs;
         const float rejectAgeSec =
             withinHold ? 0.0f : static_cast<float>(ageMs - BuildConfig::kAnthuriumRejectedHoldMs) / 1000.0f;
+        const float heldCharge = applyRejectDecay(mHeldCharge, rejectAgeSec);
         intent.activeSceneMode = ActiveSceneMode::AnthuriumReservoir;
-        intent.sceneTargetRangeM = mHeldRangeM;
-        intent.sceneTargetRangeSmoothedM = mHeldSmoothedRangeM;
-        intent.sceneChargeTarget = applyRejectDecay(mHeldChargeTarget, rejectAgeSec);
-        intent.sceneCharge = applyRejectDecay(mHeldCharge, rejectAgeSec);
-        intent.sceneIngressLevel = applyRejectDecay(mHeldIngressLevel, rejectAgeSec);
-        intent.sceneFieldLevel = applyRejectDecay(mHeldFieldLevel, rejectAgeSec);
-        intent.sceneEnergyBoost = applyRejectDecay(mHeldEnergyBoost, rejectAgeSec);
+        intent.sceneChargeTarget = heldCharge;
+        intent.sceneCharge = heldCharge;
+        intent.sceneIngressLevel = clamp01(BuildConfig::kAnthuriumIngressBaseLevel +
+                                           (heldCharge * 0.75f));
+        intent.sceneFieldLevel = clamp01(BuildConfig::kAnthuriumTorusFieldBaseLevel +
+                                         (heldCharge * 0.85f));
+        intent.sceneEnergyBoost = 0.0f;
       }
       intent.effectId = static_cast<uint8_t>(context.state);
       return intent;
@@ -170,13 +171,7 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
 
     intent.effectId = static_cast<uint8_t>(context.state);
     mHasAcceptedSceneDrive = true;
-    mHeldChargeTarget = intent.sceneChargeTarget;
     mHeldCharge = intent.sceneCharge;
-    mHeldIngressLevel = intent.sceneIngressLevel;
-    mHeldFieldLevel = intent.sceneFieldLevel;
-    mHeldEnergyBoost = intent.sceneEnergyBoost;
-    mHeldRangeM = intent.sceneTargetRangeM;
-    mHeldSmoothedRangeM = intent.sceneTargetRangeSmoothedM;
     mLastAcceptedSceneMs = context.nowMs;
     return intent;
   }
