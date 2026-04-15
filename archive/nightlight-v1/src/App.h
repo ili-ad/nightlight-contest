@@ -1,7 +1,7 @@
 #pragma once
 
 class App {
- public:
+public:
   void setup();
   void loop();
 };
