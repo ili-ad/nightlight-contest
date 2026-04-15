@@ -3,6 +3,11 @@
 #include "../BuildConfig.h"
 
 namespace {
+  constexpr uint8_t kScenePhaseAccepted = 0;
+  constexpr uint8_t kScenePhaseHold = 1;
+  constexpr uint8_t kScenePhaseDecay = 2;
+  constexpr uint8_t kScenePhaseEmpty = 3;
+
   constexpr float kRoomRangeNearM = 0.45f;
   constexpr float kRoomRangeFarM = 6.50f;
   constexpr float kSpeedStillThresholdMps = 0.08f;
@@ -132,9 +137,10 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     float ingressTarget = hasValidHistory ? mHeldIngressLevel : 0.0f;
     float fieldTarget = hasValidHistory ? mHeldFieldLevel : 0.0f;
     float energyBoostTarget = hasValidHistory ? mHeldEnergyBoost : 0.0f;
-    float speed = 0.0f;
-    float speedMag = 0.0f;
-    float energyNorm = 0.0f;
+    float speed = hasValidHistory ? mHeldSpeedMps : 0.0f;
+    float speedMag = normalizeSpeedMag(speed);
+    float energyNorm = hasValidHistory ? mHeldEnergyNorm : 0.0f;
+    uint8_t sceneDropoutPhase = hasValidHistory ? kScenePhaseHold : kScenePhaseEmpty;
 
     if (targetValid) {
       if (!mHasSmoothedRange) {
@@ -172,9 +178,12 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
       mHeldIngressLevel = ingressTarget;
       mHeldFieldLevel = fieldTarget;
       mHeldEnergyBoost = energyBoostTarget;
+      mHeldSpeedMps = speed;
+      mHeldEnergyNorm = energyNorm;
       mHeldRangeM = targetRangeM;
       mHeldSmoothedRangeM = targetSmoothedRangeM;
       mLastAcceptedSceneMs = context.nowMs;
+      sceneDropoutPhase = kScenePhaseAccepted;
     } else {
       const InvalidSceneDrive invalid = applyInvalidSceneDrive(context.nowMs);
       targetRangeM = invalid.targetRangeM;
@@ -183,11 +192,18 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
       ingressTarget = invalid.ingressTarget;
       fieldTarget = invalid.fieldTarget;
       energyBoostTarget = invalid.energyBoostTarget;
+      speed = invalid.speedMps;
+      speedMag = normalizeSpeedMag(speed);
+      energyNorm = invalid.energyNorm;
+      sceneDropoutPhase = invalid.phase;
       if (!hasValidHistory) {
         mHasChargeTarget = false;
         mLastChargeTarget = 0.0f;
         mHasSmoothedRange = false;
         mSmoothedRangeM = 0.0f;
+      }
+      if (sceneDropoutPhase == kScenePhaseEmpty) {
+        mHasAcceptedSceneDrive = false;
       }
     }
 
@@ -218,11 +234,13 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     intent.sceneNowMs = context.nowMs;
     intent.sceneTargetRangeM = validRangeOrZero(targetRangeM);
     intent.sceneTargetRangeSmoothedM = validRangeOrZero(targetSmoothedRangeM);
-    intent.sceneChargeTarget = mSceneCharge;
+    intent.sceneChargeTarget = chargeTarget;
     intent.sceneCharge = mSceneCharge;
     intent.sceneIngressLevel = mSceneIngressLevel;
     intent.sceneFieldLevel = mSceneFieldLevel;
     intent.sceneEnergyBoost = mSceneEnergyBoost;
+    intent.sceneDropoutPhase = sceneDropoutPhase;
+    intent.sceneRejectReason = targetValid ? 0u : static_cast<uint8_t>(rich.targetRejectedReason);
 
     intent.useLocalizedBlob = false;
 
@@ -251,13 +269,83 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
   }
 
   if (context.state == LampState::Decay) {
-    mHasAcceptedSceneDrive = false;
-    mHasSmoothedRange = false;
-    mHasChargeTarget = false;
-    mHasSceneDriveState = false;
-    mLastSceneUpdateMs = 0;
-    mSceneEnergyBoost = 0.0f;
-    return mShared.mapDecayBaseline(context);
+    RenderIntent intent = mShared.mapDecayBaseline(context);
+    intent.sceneNowMs = context.nowMs;
+
+    const float dtSec = safeDeltaSec(context.nowMs, mLastSceneUpdateMs);
+    mLastSceneUpdateMs = context.nowMs;
+
+    const InvalidSceneDrive invalid = applyInvalidSceneDrive(context.nowMs);
+    const float chargeTarget = invalid.chargeTarget;
+    const float ingressTarget = invalid.ingressTarget;
+    const float fieldTarget = invalid.fieldTarget;
+    const float energyBoostTarget = invalid.energyBoostTarget;
+    const float speed = invalid.speedMps;
+    const float speedMag = normalizeSpeedMag(speed);
+    const float energyNorm = invalid.energyNorm;
+
+    if (!mHasSceneDriveState) {
+      mSceneCharge = chargeTarget;
+      mSceneIngressLevel = ingressTarget;
+      mSceneFieldLevel = fieldTarget;
+      mSceneEnergyBoost = energyBoostTarget;
+      mHasSceneDriveState = true;
+    } else {
+      constexpr float kChargeRisePerSec = 7.5f;
+      constexpr float kChargeFallPerSec = 3.6f;
+      constexpr float kIngressRisePerSec = 4.8f;
+      constexpr float kIngressFallPerSec = 3.2f;
+      constexpr float kFieldRisePerSec = 4.6f;
+      constexpr float kFieldFallPerSec = 3.0f;
+      constexpr float kEnergyRisePerSec = 5.5f;
+      constexpr float kEnergyFallPerSec = 3.2f;
+      mSceneCharge = clamp01(stepToward(mSceneCharge, chargeTarget, dtSec, kChargeRisePerSec, kChargeFallPerSec));
+      mSceneIngressLevel =
+          clamp01(stepToward(mSceneIngressLevel, ingressTarget, dtSec, kIngressRisePerSec, kIngressFallPerSec));
+      mSceneFieldLevel = clamp01(stepToward(mSceneFieldLevel, fieldTarget, dtSec, kFieldRisePerSec, kFieldFallPerSec));
+      mSceneEnergyBoost =
+          clamp01(stepToward(mSceneEnergyBoost, energyBoostTarget, dtSec, kEnergyRisePerSec, kEnergyFallPerSec));
+    }
+
+    intent.activeSceneMode = ActiveSceneMode::AnthuriumReservoir;
+    intent.sceneTargetRangeM = validRangeOrZero(invalid.targetRangeM);
+    intent.sceneTargetRangeSmoothedM = validRangeOrZero(invalid.targetSmoothedRangeM);
+    intent.sceneChargeTarget = chargeTarget;
+    intent.sceneCharge = mSceneCharge;
+    intent.sceneIngressLevel = mSceneIngressLevel;
+    intent.sceneFieldLevel = mSceneFieldLevel;
+    intent.sceneEnergyBoost = mSceneEnergyBoost;
+    intent.sceneDropoutPhase = invalid.phase;
+    intent.sceneRejectReason = 0;
+
+    if (speed < -kSpeedStillThresholdMps) {
+      intent.hue = 0.02f;
+      intent.saturation = 0.86f;
+    } else if (speed > kSpeedStillThresholdMps) {
+      intent.hue = 0.58f;
+      intent.saturation = 0.78f;
+    } else {
+      intent.hue = 0.30f;
+      intent.saturation = 0.20f;
+    }
+
+    const float stillnessBoost = 1.0f - speedMag;
+    intent.rgbLevel = clamp01(0.11f + (intent.sceneCharge * 0.05f) + (speedMag * 0.05f));
+    intent.whiteLevel = context.darkAllowed
+                            ? clamp01(intent.whiteLevel + (energyNorm * 0.04f) +
+                                      (stillnessBoost * 0.02f))
+                            : 0.0f;
+
+    if (invalid.phase == kScenePhaseEmpty) {
+      mHasAcceptedSceneDrive = false;
+      mHasSmoothedRange = false;
+      mHasChargeTarget = false;
+      mSmoothedRangeM = 0.0f;
+      mLastChargeTarget = 0.0f;
+    }
+
+    intent.effectId = static_cast<uint8_t>(context.state);
+    return intent;
   }
 
   mHasAcceptedSceneDrive = false;
@@ -272,7 +360,7 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
 MapperC4001::InvalidSceneDrive MapperC4001::applyInvalidSceneDrive(uint32_t nowMs) const {
   // Invariant: invalid frame must never be treated as fresh accepted scene-drive.
   if (!mHasAcceptedSceneDrive) {
-    return {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    return {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, kScenePhaseEmpty};
   }
 
   const uint32_t ageMs = nowMs - mLastAcceptedSceneMs;
@@ -280,6 +368,8 @@ MapperC4001::InvalidSceneDrive MapperC4001::applyInvalidSceneDrive(uint32_t nowM
   const float rejectAgeSec =
       withinHold ? 0.0f : static_cast<float>(ageMs - BuildConfig::kAnthuriumRejectedHoldMs) / 1000.0f;
   const float decayScale = withinHold ? 1.0f : applyRejectDecay(1.0f, rejectAgeSec);
+  const uint8_t phase =
+      withinHold ? kScenePhaseHold : ((decayScale > 0.0f) ? kScenePhaseDecay : kScenePhaseEmpty);
   return {
       mHeldRangeM * decayScale,
       mHeldSmoothedRangeM * decayScale,
@@ -287,5 +377,8 @@ MapperC4001::InvalidSceneDrive MapperC4001::applyInvalidSceneDrive(uint32_t nowM
       mHeldIngressLevel * decayScale,
       mHeldFieldLevel * decayScale,
       mHeldEnergyBoost * decayScale,
+      mHeldSpeedMps * decayScale,
+      mHeldEnergyNorm * decayScale,
+      phase,
   };
 }

@@ -29,10 +29,14 @@ enum class DebugInputMode : uint8_t {
 
 #define TELEM_NONE 0
 #define TELEM_MINIMAL 1
-#define TELEM_SENSOR27 2
+#define TELEM_DROPOUT_TINY 2
 
 #ifndef TELEM_PROFILE
-#define TELEM_PROFILE TELEM_SENSOR27
+#define TELEM_PROFILE TELEM_DROPOUT_TINY
+#endif
+
+#ifndef BUILD_CONTEST_PROFILE
+#define BUILD_CONTEST_PROFILE 1
 #endif
 
 #ifndef BUILD_PRESENCE_BACKEND
@@ -48,7 +52,11 @@ enum class DebugInputMode : uint8_t {
 #endif
 
 #ifndef BUILD_MIN_SIZE_PROFILE
+#if BUILD_CONTEST_PROFILE
+#define BUILD_MIN_SIZE_PROFILE 1
+#else
 #define BUILD_MIN_SIZE_PROFILE 0
+#endif
 #endif
 
 #ifndef BUILD_ENABLE_BOOT_ANIMATION
@@ -366,8 +374,8 @@ namespace BuildConfig {
                 "Simulation boundary order invalid: kSimDayLockoutEndMs must be < "
                 "kSimLoopMs");
   static_assert((TELEM_PROFILE == TELEM_NONE) || (TELEM_PROFILE == TELEM_MINIMAL) ||
-                    (TELEM_PROFILE == TELEM_SENSOR27),
-                "TELEM_PROFILE must be TELEM_NONE, TELEM_MINIMAL, or TELEM_SENSOR27");
+                    (TELEM_PROFILE == TELEM_DROPOUT_TINY),
+                "TELEM_PROFILE must be TELEM_NONE, TELEM_MINIMAL, or TELEM_DROPOUT_TINY");
   static_assert((BUILD_PRESENCE_BACKEND == PRESENCE_BACKEND_NONE) ||
                     (BUILD_PRESENCE_BACKEND == PRESENCE_BACKEND_LD2410) ||
                     (BUILD_PRESENCE_BACKEND == PRESENCE_BACKEND_C4001),
