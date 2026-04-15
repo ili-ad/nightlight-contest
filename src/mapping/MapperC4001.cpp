@@ -118,16 +118,20 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
                                   (rich.targetRangeRawM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
     const bool hasValidAcceptedRange = (rich.targetRangeM > 0.0f) &&
                                        (rich.targetRangeM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
-    const bool targetValid = rich.targetSampleAccepted &&
-                             hasTarget &&
-                             hasValidRawRange &&
-                             hasValidAcceptedRange;
+    const bool invalidSceneFrame = !hasTarget ||
+                                   !rich.targetSampleAccepted ||
+                                   (rich.targetRejectedReason != 0u) ||
+                                   !hasValidRawRange ||
+                                   !hasValidAcceptedRange;
+    const bool targetValid = !invalidSceneFrame;
 
     const bool hasValidHistory = mHasAcceptedSceneDrive;
     float targetRangeM = hasValidHistory ? mHeldRangeM : 0.0f;
     float targetSmoothedRangeM = hasValidHistory ? mHeldSmoothedRangeM : 0.0f;
     float chargeTarget = hasValidHistory ? mHeldCharge : 0.0f;
-    float energyBoostTarget = 0.0f;
+    float ingressTarget = hasValidHistory ? mHeldIngressLevel : 0.0f;
+    float fieldTarget = hasValidHistory ? mHeldFieldLevel : 0.0f;
+    float energyBoostTarget = hasValidHistory ? mHeldEnergyBoost : 0.0f;
     float speed = 0.0f;
     float speedMag = 0.0f;
     float energyNorm = 0.0f;
@@ -159,33 +163,39 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
       targetRangeM = rich.targetRangeM;
       targetSmoothedRangeM = mSmoothedRangeM;
       energyBoostTarget = clamp01(energyNorm * BuildConfig::kAnthuriumEnergyWhiteBoostGain);
+      ingressTarget = clamp01(BuildConfig::kAnthuriumIngressBaseLevel +
+                              (chargeTarget * 0.75f));
+      fieldTarget = clamp01(BuildConfig::kAnthuriumTorusFieldBaseLevel +
+                            (chargeTarget * 0.85f));
       mHasAcceptedSceneDrive = true;
       mHeldCharge = chargeTarget;
+      mHeldIngressLevel = ingressTarget;
+      mHeldFieldLevel = fieldTarget;
+      mHeldEnergyBoost = energyBoostTarget;
       mHeldRangeM = targetRangeM;
       mHeldSmoothedRangeM = targetSmoothedRangeM;
       mLastAcceptedSceneMs = context.nowMs;
-    } else if (hasValidHistory) {
-      const uint32_t ageMs = context.nowMs - mLastAcceptedSceneMs;
-      const bool withinHold = ageMs <= BuildConfig::kAnthuriumRejectedHoldMs;
-      const float rejectAgeSec =
-          withinHold ? 0.0f : static_cast<float>(ageMs - BuildConfig::kAnthuriumRejectedHoldMs) / 1000.0f;
-      chargeTarget = applyRejectDecay(mHeldCharge, rejectAgeSec);
     } else {
-      mHasChargeTarget = false;
-      mLastChargeTarget = 0.0f;
-      mHasSmoothedRange = false;
-      mSmoothedRangeM = 0.0f;
+      const InvalidSceneDrive invalid = applyInvalidSceneDrive(context.nowMs);
+      targetRangeM = invalid.targetRangeM;
+      targetSmoothedRangeM = invalid.targetSmoothedRangeM;
+      chargeTarget = invalid.chargeTarget;
+      ingressTarget = invalid.ingressTarget;
+      fieldTarget = invalid.fieldTarget;
+      energyBoostTarget = invalid.energyBoostTarget;
+      if (!hasValidHistory) {
+        mHasChargeTarget = false;
+        mLastChargeTarget = 0.0f;
+        mHasSmoothedRange = false;
+        mSmoothedRangeM = 0.0f;
+      }
     }
-
-    const float ingressTarget = clamp01(BuildConfig::kAnthuriumIngressBaseLevel +
-                                        (chargeTarget * 0.75f));
-    const float fieldTarget = clamp01(BuildConfig::kAnthuriumTorusFieldBaseLevel +
-                                      (chargeTarget * 0.85f));
 
     if (!mHasSceneDriveState) {
       mSceneCharge = chargeTarget;
       mSceneIngressLevel = ingressTarget;
       mSceneFieldLevel = fieldTarget;
+      mSceneEnergyBoost = energyBoostTarget;
       mHasSceneDriveState = true;
     } else {
       constexpr float kChargeRisePerSec = 7.5f;
@@ -194,10 +204,14 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
       constexpr float kIngressFallPerSec = 3.2f;
       constexpr float kFieldRisePerSec = 4.6f;
       constexpr float kFieldFallPerSec = 3.0f;
+      constexpr float kEnergyRisePerSec = 5.5f;
+      constexpr float kEnergyFallPerSec = 3.2f;
       mSceneCharge = clamp01(stepToward(mSceneCharge, chargeTarget, dtSec, kChargeRisePerSec, kChargeFallPerSec));
       mSceneIngressLevel =
           clamp01(stepToward(mSceneIngressLevel, ingressTarget, dtSec, kIngressRisePerSec, kIngressFallPerSec));
       mSceneFieldLevel = clamp01(stepToward(mSceneFieldLevel, fieldTarget, dtSec, kFieldRisePerSec, kFieldFallPerSec));
+      mSceneEnergyBoost =
+          clamp01(stepToward(mSceneEnergyBoost, energyBoostTarget, dtSec, kEnergyRisePerSec, kEnergyFallPerSec));
     }
 
     intent.activeSceneMode = ActiveSceneMode::AnthuriumReservoir;
@@ -208,7 +222,7 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     intent.sceneCharge = mSceneCharge;
     intent.sceneIngressLevel = mSceneIngressLevel;
     intent.sceneFieldLevel = mSceneFieldLevel;
-    intent.sceneEnergyBoost = energyBoostTarget;
+    intent.sceneEnergyBoost = mSceneEnergyBoost;
 
     intent.useLocalizedBlob = false;
 
@@ -242,6 +256,7 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     mHasChargeTarget = false;
     mHasSceneDriveState = false;
     mLastSceneUpdateMs = 0;
+    mSceneEnergyBoost = 0.0f;
     return mShared.mapDecayBaseline(context);
   }
 
@@ -250,5 +265,27 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
   mHasChargeTarget = false;
   mHasSceneDriveState = false;
   mLastSceneUpdateMs = 0;
+  mSceneEnergyBoost = 0.0f;
   return mShared.map(context);
+}
+
+MapperC4001::InvalidSceneDrive MapperC4001::applyInvalidSceneDrive(uint32_t nowMs) const {
+  // Invariant: invalid frame must never be treated as fresh accepted scene-drive.
+  if (!mHasAcceptedSceneDrive) {
+    return {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+  }
+
+  const uint32_t ageMs = nowMs - mLastAcceptedSceneMs;
+  const bool withinHold = ageMs <= BuildConfig::kAnthuriumRejectedHoldMs;
+  const float rejectAgeSec =
+      withinHold ? 0.0f : static_cast<float>(ageMs - BuildConfig::kAnthuriumRejectedHoldMs) / 1000.0f;
+  const float decayScale = withinHold ? 1.0f : applyRejectDecay(1.0f, rejectAgeSec);
+  return {
+      mHeldRangeM * decayScale,
+      mHeldSmoothedRangeM * decayScale,
+      mHeldCharge * decayScale,
+      mHeldIngressLevel * decayScale,
+      mHeldFieldLevel * decayScale,
+      mHeldEnergyBoost * decayScale,
+  };
 }
