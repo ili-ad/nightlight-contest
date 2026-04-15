@@ -42,13 +42,15 @@ void Telemetry::update(const LampStateMachine& stateMachine,
                        const PresenceC4001::LinkStatus& c4001LinkStatus,
                        const AmbientGateResult& ambientGate,
                        const C4001PresenceRich& c4001Rich,
-                       const RenderIntent& intent) {
+                       const RenderIntent& rawIntent,
+                       const RenderIntent& finalIntent) {
 #if TELEM_PROFILE == TELEM_NONE
   (void)stateMachine;
   (void)c4001LinkStatus;
   (void)ambientGate;
   (void)c4001Rich;
-  (void)intent;
+  (void)rawIntent;
+  (void)finalIntent;
   return;
 #else
   const BehaviorContext& context = stateMachine.context();
@@ -64,21 +66,22 @@ void Telemetry::update(const LampStateMachine& stateMachine,
 
 #if TELEM_PROFILE == TELEM_DROPOUT_TINY
   const bool linkChanged = !mHasLastLinkState || (c4001LinkStatus.state != mLastLinkState);
-  const bool phaseChanged = !mHasDropoutPhase || (intent.sceneDropoutPhase != mLastDropoutPhase);
-  const bool reasonChanged = !mHasDropoutReason || (intent.sceneRejectReason != mLastDropoutReason);
+  const bool phaseChanged = !mHasDropoutPhase || (rawIntent.sceneDropoutPhase != mLastDropoutPhase);
+  const bool reasonChanged = !mHasDropoutReason || (rawIntent.sceneRejectReason != mLastDropoutReason);
   const bool periodic =
       ((mLastDropoutLogMs == 0) ||
-       ((nowMs - mLastDropoutLogMs) >= BuildConfig::kTelemetryC4001RawLogIntervalMs));
+       ((nowMs - mLastDropoutLogMs) >= 100u));
   const bool inDropoutRelevantState =
       (context.state == LampState::ActiveInterpretive) || (context.state == LampState::Decay);
+  const bool notAcceptedPhase = (rawIntent.sceneDropoutPhase != 0u);
   const bool shouldLogDropout =
-      inDropoutRelevantState && (phaseChanged || reasonChanged || periodic);
+      inDropoutRelevantState && (phaseChanged || reasonChanged || (notAcceptedPhase && periodic));
 #endif
 
 #if TELEM_PROFILE == TELEM_C4001_PROBE
-  const bool invalid = (intent.sceneDropoutPhase != 0u);
-  const bool phaseChanged = !mHasDropoutPhase || (intent.sceneDropoutPhase != mLastDropoutPhase);
-  const bool reasonChanged = !mHasDropoutReason || (intent.sceneRejectReason != mLastDropoutReason);
+  const bool invalid = (rawIntent.sceneDropoutPhase != 0u);
+  const bool phaseChanged = !mHasDropoutPhase || (rawIntent.sceneDropoutPhase != mLastDropoutPhase);
+  const bool reasonChanged = !mHasDropoutReason || (rawIntent.sceneRejectReason != mLastDropoutReason);
   const bool periodicInvalid = invalid &&
                               ((mLastDropoutLogMs == 0) || ((nowMs - mLastDropoutLogMs) >= 100u));
   const bool shouldLogProbe = phaseChanged || reasonChanged || periodicInvalid;
@@ -86,27 +89,29 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   if (shouldLogProbe) {
     mHasDropoutPhase = true;
     mHasDropoutReason = true;
-    mLastDropoutPhase = intent.sceneDropoutPhase;
-    mLastDropoutReason = intent.sceneRejectReason;
+    mLastDropoutPhase = rawIntent.sceneDropoutPhase;
+    mLastDropoutReason = rawIntent.sceneRejectReason;
     mLastDropoutLogMs = nowMs;
 
-    Serial.print(static_cast<uint8_t>(intent.sceneDropoutPhase));
+    Serial.print(static_cast<uint8_t>(rawIntent.sceneDropoutPhase));
     Serial.print(',');
-    Serial.print(static_cast<uint8_t>(intent.sceneRejectReason));
+    Serial.print(static_cast<uint8_t>(rawIntent.sceneRejectReason));
     Serial.print(',');
     Serial.print(quantizeMillimeters(c4001Rich.targetRangeRawM));
     Serial.print(',');
-    Serial.print(quantizeMillimeters(intent.sceneTargetRangeM));
+    Serial.print(quantizeMillimeters(rawIntent.sceneTargetRangeM));
     Serial.print(',');
-    Serial.print(intent.sceneSampleAgeMs);
+    Serial.print(rawIntent.sceneSampleAgeMs);
     Serial.print(',');
-    Serial.print(quantizeQ1000(intent.sceneIngressLevel));
+    Serial.print(quantizeQ1000(rawIntent.sceneIngressLevel));
     Serial.print(',');
-    Serial.print(quantizeQ1000(intent.sceneChargeTarget));
+    Serial.print(quantizeQ1000(rawIntent.sceneChargeTarget));
     Serial.print(',');
-    Serial.println(quantizeQ1000(intent.sceneCharge));
+    Serial.println(quantizeQ1000(rawIntent.sceneCharge));
   }
 #endif
+
+  (void)finalIntent;
 
 #if TELEM_PROFILE == TELEM_MINIMAL
   if (ambientCommit) {
@@ -141,25 +146,25 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   if (shouldLogDropout) {
     mHasDropoutPhase = true;
     mHasDropoutReason = true;
-    mLastDropoutPhase = intent.sceneDropoutPhase;
-    mLastDropoutReason = intent.sceneRejectReason;
+    mLastDropoutPhase = rawIntent.sceneDropoutPhase;
+    mLastDropoutReason = rawIntent.sceneRejectReason;
     mLastDropoutLogMs = nowMs;
     Serial.print("d,");
-    Serial.print(intent.sceneDropoutPhase);
+    Serial.print(rawIntent.sceneDropoutPhase);
     Serial.print(',');
-    Serial.print(intent.sceneRejectReason);
+    Serial.print(rawIntent.sceneRejectReason);
     Serial.print(',');
     Serial.print(quantizeMillimeters(c4001Rich.targetRangeRawM));
     Serial.print(',');
-    Serial.print(quantizeMillimeters(intent.sceneTargetRangeM));
+    Serial.print(quantizeMillimeters(rawIntent.sceneTargetRangeM));
     Serial.print(',');
-    Serial.print(intent.sceneSampleAgeMs);
+    Serial.print(rawIntent.sceneSampleAgeMs);
     Serial.print(',');
-    Serial.print(quantizeQ1000(intent.sceneIngressLevel));
+    Serial.print(quantizeQ1000(rawIntent.sceneIngressLevel));
     Serial.print(',');
-    Serial.print(quantizeQ1000(intent.sceneChargeTarget));
+    Serial.print(quantizeQ1000(rawIntent.sceneChargeTarget));
     Serial.print(',');
-    Serial.println(quantizeQ1000(intent.sceneCharge));
+    Serial.println(quantizeQ1000(rawIntent.sceneCharge));
   }
 #endif
 
