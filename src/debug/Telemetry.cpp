@@ -42,7 +42,6 @@ void Telemetry::begin() {
   mLastState = LampState::BootAnimation;
   mHasLastLinkState = false;
   mLastLinkState = PresenceC4001::LinkState::Offline;
-  mLastOfflineLogMs = 0;
   mLastS27LogMs = 0;
 }
 
@@ -86,11 +85,7 @@ void Telemetry::update(const LampStateMachine& stateMachine,
 
 #if TELEM_PROFILE >= TELEM_MINIMAL
   const bool linkTransitioned = !mHasLastLinkState || (c4001LinkStatus.state != mLastLinkState);
-  const bool offlinePeriodic =
-      (c4001LinkStatus.state == PresenceC4001::LinkState::Offline) &&
-      ((mLastOfflineLogMs == 0) ||
-       ((nowMs - mLastOfflineLogMs) >= BuildConfig::kTelemetryOfflineLogIntervalMs));
-  const bool linkChanged = linkTransitioned || offlinePeriodic;
+  const bool linkChanged = linkTransitioned;
 
   const bool ambientCommit = ambientGate.transitionCommitted;
 #endif
@@ -105,26 +100,15 @@ void Telemetry::update(const LampStateMachine& stateMachine,
 #if TELEM_PROFILE >= TELEM_MINIMAL
   if (ambientCommit) {
     Serial.print("ag c=");
-    Serial.print(ambientGate.darkAllowed ? "n" : "d");
-    Serial.print(" lx=");
-    Serial.println(ambientGate.gateLux, 1);
+    Serial.println(ambientGate.darkAllowed ? "n" : "d");
   }
 
   if (linkChanged) {
     mHasLastLinkState = true;
     mLastLinkState = c4001LinkStatus.state;
-    if (c4001LinkStatus.state == PresenceC4001::LinkState::Offline) {
-      mLastOfflineLogMs = nowMs;
-    }
 
     Serial.print("ln=");
-    Serial.print(linkStateCode(c4001LinkStatus.state));
-    Serial.print(" on=");
-    Serial.print(c4001LinkStatus.online ? "1" : "0");
-    Serial.print(" h=");
-    Serial.print(c4001LinkStatus.holding ? "1" : "0");
-    Serial.print(" f=");
-    Serial.println(c4001LinkStatus.consecutiveFailures);
+    Serial.println(linkStateCode(c4001LinkStatus.state));
   }
 #endif
 
@@ -161,15 +145,7 @@ void Telemetry::update(const LampStateMachine& stateMachine,
     mLastState = context.state;
 
     Serial.print("st=");
-    Serial.print(stateCode(context.state));
-    Serial.print(" lx=");
-    Serial.print(context.ambientLux, 1);
-    Serial.print(" cf=");
-    Serial.print(context.presenceConfidence, 2);
-    Serial.print(" ds=");
-    Serial.print(context.distanceHint, 2);
-    Serial.print(" mo=");
-    Serial.println(context.motionHint, 2);
+    Serial.println(stateCode(context.state));
   }
 #else
   (void)stateChanged;

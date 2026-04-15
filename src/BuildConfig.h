@@ -88,7 +88,6 @@ namespace BuildConfig {
   constexpr bool kEnableInterludes = true;
   constexpr bool kEnableTelemetry = (TELEM_PROFILE != TELEM_NONE);
   constexpr uint8_t kTelemetryProfile = TELEM_PROFILE;
-  constexpr uint32_t kTelemetryOfflineLogIntervalMs = 250;
   constexpr uint32_t kTelemetryPresenceLogIntervalMs = 500;
 
   constexpr uint32_t kBootAnimationMs = 1800;
@@ -213,6 +212,7 @@ namespace BuildConfig {
   constexpr uint32_t kTelemetryC4001RawLogIntervalMs = 400;
   constexpr float kAnthuriumNearFieldCompressionStartM = 0.90f;
   constexpr float kAnthuriumNearFieldCompressionExponent = 2.10f;
+  constexpr float kAnthuriumNearFieldChargeTargetMaxDeltaPerUpdate = 0.03f;
   constexpr float kAnthuriumChargeCompressionKnee = 0.68f;
   constexpr float kAnthuriumChargeCompressionSoftness = 0.72f;
   constexpr float kAnthuriumChargeTargetMaxDeltaPerUpdate = 0.06f;

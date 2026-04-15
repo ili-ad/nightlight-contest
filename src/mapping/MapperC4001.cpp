@@ -6,7 +6,6 @@ namespace {
   constexpr float kRoomRangeNearM = 0.45f;
   constexpr float kRoomRangeFarM = 6.50f;
   constexpr float kSpeedStillThresholdMps = 0.08f;
-  constexpr uint32_t kTargetHoldMs = 260;
 
   float clamp01(float value) {
     if (value < 0.0f) {
@@ -34,6 +33,39 @@ namespace {
     return clamp01(fabsf(speedMps) / 1.50f);
   }
 
+  float clampDelta(float previous, float target, float maxDelta) {
+    if (target > previous + maxDelta) {
+      return previous + maxDelta;
+    }
+    if (target < previous - maxDelta) {
+      return previous - maxDelta;
+    }
+    return target;
+  }
+
+  float chargeAtRange(float rangeM) {
+    const float nearness = clamp01(1.0f - normalizeRange(rangeM));
+    return clamp01(nearness * BuildConfig::kAnthuriumDistanceToChargeGain);
+  }
+
+  float mappedChargeFromRange(float rangeM) {
+    const float clampedRange = (rangeM < 0.0f) ? 0.0f : rangeM;
+    const float baseCharge = chargeAtRange(clampedRange);
+    const float nearStart = BuildConfig::kAnthuriumNearFieldCompressionStartM;
+    if (nearStart <= 0.001f || clampedRange >= nearStart) {
+      return baseCharge;
+    }
+
+    const float startCharge = chargeAtRange(nearStart);
+    const float t = clamp01((nearStart - clampedRange) / nearStart);
+    const float exponent =
+        (BuildConfig::kAnthuriumNearFieldCompressionExponent < 1.0f)
+            ? 1.0f
+            : BuildConfig::kAnthuriumNearFieldCompressionExponent;
+    const float eased = powf(t, exponent);
+    const float nearCharge = startCharge + ((1.0f - startCharge) * eased);
+    return clamp01((nearCharge > baseCharge) ? nearCharge : baseCharge);
+  }
 }
 
 RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001PresenceRich& rich) {
@@ -44,44 +76,42 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
     const bool targetValid = rich.targetSampleAccepted &&
                              (rich.targetNumber > 0) &&
                              (rich.targetRangeM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
-    if (targetValid) {
-      mHasHeldTarget = true;
-      mHeldAtMs = context.nowMs;
-      mHeldRangeM = rich.targetRangeM;
-      mHeldSpeedMps = rich.targetSpeedMps;
-      mHeldEnergyNorm = normalizeEnergy(rich.targetEnergy);
-    }
-
-    bool useHeldTarget = false;
-    if (mHasHeldTarget) {
-      useHeldTarget = targetValid || ((context.nowMs - mHeldAtMs) <= kTargetHoldMs);
-    }
-
-    if (!useHeldTarget) {
+    if (!targetValid) {
+      mHasChargeTarget = false;
       intent.effectId = static_cast<uint8_t>(context.state);
       return intent;
     }
 
     if (!mHasSmoothedRange) {
-      mSmoothedRangeM = mHeldRangeM;
+      mSmoothedRangeM = rich.targetRangeM;
       mHasSmoothedRange = true;
     } else {
       const float rangeAlpha = clamp01(BuildConfig::kAnthuriumRangeSmoothingAlpha);
-      mSmoothedRangeM += (mHeldRangeM - mSmoothedRangeM) * rangeAlpha;
+      mSmoothedRangeM += (rich.targetRangeM - mSmoothedRangeM) * rangeAlpha;
     }
 
-    const float speed = mHeldSpeedMps;
+    const float speed = rich.targetSpeedMps;
     const float speedMag = normalizeSpeedMag(speed);
-    const float energyNorm = mHeldEnergyNorm;
+    const float energyNorm = normalizeEnergy(rich.targetEnergy);
 
     intent.activeSceneMode = ActiveSceneMode::AnthuriumReservoir;
     intent.sceneNowMs = context.nowMs;
 
-    const float nearness = clamp01(1.0f - normalizeRange(mSmoothedRangeM));
-    intent.sceneCharge = clamp01(nearness * BuildConfig::kAnthuriumDistanceToChargeGain);
-    intent.sceneTargetRangeM = mHeldRangeM;
+    float chargeTarget = mappedChargeFromRange(mSmoothedRangeM);
+    if (mHasChargeTarget && (mSmoothedRangeM <= BuildConfig::kAnthuriumNearFieldCompressionStartM)) {
+      const float maxStep =
+          (BuildConfig::kAnthuriumNearFieldChargeTargetMaxDeltaPerUpdate < 0.001f)
+              ? 0.001f
+              : BuildConfig::kAnthuriumNearFieldChargeTargetMaxDeltaPerUpdate;
+      chargeTarget = clampDelta(mLastChargeTarget, chargeTarget, maxStep);
+    }
+    mHasChargeTarget = true;
+    mLastChargeTarget = chargeTarget;
+
+    intent.sceneCharge = chargeTarget;
+    intent.sceneTargetRangeM = rich.targetRangeM;
     intent.sceneTargetRangeSmoothedM = mSmoothedRangeM;
-    intent.sceneChargeTarget = intent.sceneCharge;
+    intent.sceneChargeTarget = chargeTarget;
     intent.sceneIngressLevel = clamp01(BuildConfig::kAnthuriumIngressBaseLevel +
                                        (intent.sceneCharge * 0.75f));
     intent.sceneFieldLevel = clamp01(BuildConfig::kAnthuriumTorusFieldBaseLevel +
