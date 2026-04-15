@@ -17,7 +17,12 @@
 #include "mapping/RenderIntent.h"
 #include "processing/AmbientGate.h"
 #include "render/PixelBus.h"
+#if BUILD_HAS_RGB_RENDERER
+#include "render/RendererRgb.h"
+#endif
+#if BUILD_HAS_RGBW_RENDERER
 #include "render/RendererRgbw.h"
+#endif
 #include "render/RenderIntentSmoother.h"
 #include "sensors/AmbientBh1750.h"
 #include "sensors/PresenceManager.h"
@@ -25,7 +30,12 @@
 static LampStateMachine gStateMachine;
 static Telemetry gTelemetry;
 static PixelBus gPixelBus;
+#if BUILD_HAS_RGB_RENDERER
+static RendererRgb gRendererRgb;
+#endif
+#if BUILD_HAS_RGBW_RENDERER
 static RendererRgbw gRendererRgbw;
+#endif
 static MapperShared gMapper;
 static MapperC4001 gMapperC4001;
 static RenderIntentSmoother gIntentSmoother;
@@ -104,6 +114,7 @@ namespace {
     }
   }
 
+  #if BUILD_HAS_RGBW_RENDERER
   void renderRgbwFrame(const BehaviorContext& context, const RenderIntent& intent) {
     switch (context.state) {
       case LampState::BootAnimation: {
@@ -136,11 +147,17 @@ namespace {
         break;
     }
   }
+  #endif
 
   void renderFrame(const BehaviorContext& context, const RenderIntent& intent) {
-    // Current Nano Every bench target is RGBW-only. Reintroduce RGB backend
-    // dispatch here if/when a bench build actively uses it again.
+#if BUILD_HAS_RGBW_RENDERER
     renderRgbwFrame(context, intent);
+#elif BUILD_HAS_RGB_RENDERER
+    gRendererRgb.renderIntent(gPixelBus, intent);
+#else
+    (void)context;
+    (void)intent;
+#endif
   }
 }
 
@@ -151,7 +168,12 @@ void App::setup() {
   gPresenceManager.begin();
   gPixelBus.begin();
 
+#if BUILD_HAS_RGB_RENDERER
+  gRendererRgb.begin(gPixelBus);
+#endif
+#if BUILD_HAS_RGBW_RENDERER
   gRendererRgbw.begin(gPixelBus);
+#endif
   gIntentSmoother.reset();
 }
 
