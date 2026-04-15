@@ -138,6 +138,7 @@ private:
   C4001PresenceRich mRich{};
   PresenceC4001::LinkStatus mLink{};
 };
+#error "Cannot locate project src/ headers for C4001NearFieldProbe. Open this sketch from the repository tree."
 #endif
 
 namespace {
