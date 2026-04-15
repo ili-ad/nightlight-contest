@@ -26,6 +26,16 @@ float safeDeltaSec(uint32_t nowMs, uint32_t previousMs) {
   return static_cast<float>(nowMs - previousMs) / 1000.0f;
 }
 
+float clampDelta(float previous, float target, float maxDelta) {
+  if (target > previous + maxDelta) {
+    return previous + maxDelta;
+  }
+  if (target < previous - maxDelta) {
+    return previous - maxDelta;
+  }
+  return target;
+}
+
 float stepToward(float current, float target, float dtSec, float risePerSec, float fallPerSec) {
   if (dtSec <= 0.0f) {
     return target;

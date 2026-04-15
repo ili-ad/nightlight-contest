@@ -69,4 +69,6 @@ struct C4001PresenceRich {
   float stableEnergyBoostTarget = 0.0f;
   float stableSpeedMps = 0.0f;
   float stableEnergyNorm = 0.0f;
+  float stableVisibility = 0.0f;
+  float stableInfluence = 0.0f;
 };
