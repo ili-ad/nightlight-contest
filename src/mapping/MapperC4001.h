@@ -20,4 +20,9 @@ private:
   float mHeldRangeM = 0.0f;
   float mHeldSmoothedRangeM = 0.0f;
   uint32_t mLastAcceptedSceneMs = 0;
+  bool mHasSceneDriveState = false;
+  float mSceneCharge = 0.0f;
+  float mSceneIngressLevel = 0.0f;
+  float mSceneFieldLevel = 0.0f;
+  uint32_t mLastSceneUpdateMs = 0;
 };
