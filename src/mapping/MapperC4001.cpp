@@ -73,8 +73,7 @@ RenderIntent MapperC4001::map(const BehaviorContext& context,
 
   applySceneDriveSmoothing(dtSec, sample);
 
-  const float speedMag = normalizeSpeedMag(sample.speedMps);
-  return composeSceneIntent(context, intent, sample, speedMag);
+  return composeSceneIntent(context, intent, sample);
 }
 
 MapperC4001::EffectiveSample MapperC4001::buildEffectiveSample(const BehaviorContext& context,
@@ -94,6 +93,8 @@ MapperC4001::EffectiveSample MapperC4001::buildEffectiveSample(const BehaviorCon
   sample.energyBoostTarget = rich.stableEnergyBoostTarget;
   sample.speedMps = rich.stableSpeedMps;
   sample.energyNorm = rich.stableEnergyNorm;
+  sample.visibility = rich.stableVisibility;
+  sample.influence = rich.stableInfluence;
   sample.rejectReason = static_cast<uint8_t>(rich.targetRejectedReason);
 
   if (rich.targetSampleAccepted && sample.valid) {
@@ -141,12 +142,16 @@ void MapperC4001::applySceneDriveSmoothing(float dtSec, const EffectiveSample& s
       clamp01(stepToward(mSceneFieldLevel, sample.fieldTarget, dtSec, kFieldRisePerSec, kFieldFallPerSec));
   mSceneEnergyBoost =
       clamp01(stepToward(mSceneEnergyBoost, sample.energyBoostTarget, dtSec, kEnergyRisePerSec, kEnergyFallPerSec));
+
+  if (sample.phase == C4001TrackFilter::Phase::Accepted) {
+    mHeldSpeedMag = normalizeSpeedMag(sample.speedMps);
+    mHeldEnergyNorm = clamp01(sample.energyNorm);
+  }
 }
 
 RenderIntent MapperC4001::composeSceneIntent(const BehaviorContext& context,
                                              RenderIntent intent,
-                                             const EffectiveSample& sample,
-                                             float speedMag) const {
+                                             const EffectiveSample& sample) const {
   intent.activeSceneMode = ActiveSceneMode::AnthuriumReservoir;
   intent.sceneNowMs = context.nowMs;
   intent.sceneTargetRangeM = validRangeOrZero(sample.rangeM);
@@ -161,10 +166,18 @@ RenderIntent MapperC4001::composeSceneIntent(const BehaviorContext& context,
   intent.sceneRejectReason = sample.rejectReason;
   intent.useLocalizedBlob = false;
 
-  if (sample.speedMps < -kSpeedStillThresholdMps) {
+  const bool allowLiveKinetics = (sample.phase == C4001TrackFilter::Phase::Accepted);
+  const float phaseBlend = clamp01(sample.influence);
+  const float liveSpeedMag = normalizeSpeedMag(sample.speedMps);
+  const float blendedSpeedMag = allowLiveKinetics ? liveSpeedMag : (mHeldSpeedMag * phaseBlend);
+  const float blendedEnergyNorm = allowLiveKinetics ? clamp01(sample.energyNorm)
+                                                    : (mHeldEnergyNorm * phaseBlend);
+  const float hueSpeedMps = allowLiveKinetics ? sample.speedMps : 0.0f;
+
+  if (hueSpeedMps < -kSpeedStillThresholdMps) {
     intent.hue = 0.02f;
     intent.saturation = 0.86f;
-  } else if (sample.speedMps > kSpeedStillThresholdMps) {
+  } else if (hueSpeedMps > kSpeedStillThresholdMps) {
     intent.hue = 0.58f;
     intent.saturation = 0.78f;
   } else {
@@ -172,10 +185,10 @@ RenderIntent MapperC4001::composeSceneIntent(const BehaviorContext& context,
     intent.saturation = 0.20f;
   }
 
-  const float stillnessBoost = 1.0f - speedMag;
-  intent.rgbLevel = clamp01(0.11f + (intent.sceneCharge * 0.05f) + (speedMag * 0.05f));
+  const float stillnessBoost = 1.0f - blendedSpeedMag;
+  intent.rgbLevel = clamp01(0.11f + (intent.sceneCharge * 0.05f) + (blendedSpeedMag * 0.05f));
   intent.whiteLevel = context.darkAllowed
-                          ? clamp01(intent.whiteLevel + (sample.energyNorm * 0.04f) +
+                          ? clamp01(intent.whiteLevel + (blendedEnergyNorm * 0.04f) +
                                     (stillnessBoost * 0.02f))
                           : 0.0f;
   intent.effectId = static_cast<uint8_t>(context.state);
@@ -186,4 +199,6 @@ void MapperC4001::resetSceneState() {
   mHasSceneDriveState = false;
   mLastSceneUpdateMs = 0;
   mSceneEnergyBoost = 0.0f;
+  mHeldSpeedMag = 0.0f;
+  mHeldEnergyNorm = 0.0f;
 }

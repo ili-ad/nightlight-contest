@@ -68,7 +68,7 @@ private:
   void clearNearFieldCoherence();
 
   static float clamp01(float value);
-  CorePresence buildCoreFromStableTrack(const C4001PresenceRich& rich, uint32_t nowMs) const;
+  CorePresence buildCoreFromStableTrack(const C4001PresenceRich& rich, uint32_t nowMs);
   C4001TrackFilter::Sample buildStableSample(const C4001PresenceRich& rich);
   void applyStableTrack(C4001PresenceRich& rich,
                         C4001TrackFilter::InputClass inputClass,
@@ -100,4 +100,8 @@ private:
   bool stableHasChargeTarget_ = false;
   float stableSmoothedRangeM_ = 0.0f;
   float stableLastChargeTarget_ = 0.0f;
+  bool coreHintsInitialized_ = false;
+  float corePresenceConfidence_ = 0.0f;
+  float coreDistanceHint_ = 0.0f;
+  float coreMotionHint_ = 0.0f;
 };
