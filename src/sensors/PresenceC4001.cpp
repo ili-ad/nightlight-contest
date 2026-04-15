@@ -291,6 +291,14 @@ PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
   linkStatus_.noTargetCommitted = false;
   linkStatus_.online =
       (linkStatus_.consecutiveFailures <= BuildConfig::kC4001MaxConsecutiveFailuresForOnline);
+  lastRich_.targetNumber = 0;
+  lastRich_.targetRangeM = 0.0f;
+  lastRich_.targetSpeedMps = 0.0f;
+  lastRich_.targetRangeRawM = 0.0f;
+  lastRich_.targetSpeedRawM = 0.0f;
+  lastRich_.targetSampleAccepted = false;
+  lastRich_.targetRejectedReason = static_cast<uint8_t>(RejectReason::NoTarget);
+  clearNearFieldCoherence();
 
   CorePresence held = lastCore_;
   const uint32_t msSinceSuccess =

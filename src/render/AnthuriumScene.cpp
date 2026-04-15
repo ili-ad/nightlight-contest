@@ -175,18 +175,7 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
 }
 
 float AnthuriumScene::compressChargeTarget(float targetCharge) const {
-  const float clamped = clamp01(targetCharge);
-  const float knee = clamp01(BuildConfig::kAnthuriumChargeCompressionKnee);
-  if (clamped <= knee || knee >= 0.999f) {
-    return clamped;
-  }
-
-  const float softness = (BuildConfig::kAnthuriumChargeCompressionSoftness < 0.05f)
-                             ? 0.05f
-                             : BuildConfig::kAnthuriumChargeCompressionSoftness;
-  const float x = (clamped - knee) / (1.0f - knee);
-  const float powered = powf(x, 1.0f + softness);
-  return clamp01(knee + ((1.0f - knee) * powered));
+  return clamp01(targetCharge);
 }
 
 float AnthuriumScene::clampChargeTargetDelta(float previous, float target) const {
