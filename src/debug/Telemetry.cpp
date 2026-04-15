@@ -32,21 +32,21 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   const uint32_t nowMs = millis();
   const bool stateChanged = !mHasLastState || (context.state != mLastState);
 
-#if TELEM_PROFILE >= TELEM_MINIMAL
+#if TELEM_PROFILE == TELEM_MINIMAL
   const bool linkTransitioned = !mHasLastLinkState || (c4001LinkStatus.state != mLastLinkState);
   const bool linkChanged = linkTransitioned;
 
   const bool ambientCommit = ambientGate.transitionCommitted;
 #endif
 
-#if TELEM_PROFILE >= TELEM_SENSOR27
+#if TELEM_PROFILE == TELEM_SENSOR27
   const bool s27Periodic =
       ((mLastS27LogMs == 0) ||
        ((nowMs - mLastS27LogMs) >= BuildConfig::kTelemetryC4001RawLogIntervalMs));
   const bool shouldLogS27 = s27Periodic && (context.state == LampState::ActiveInterpretive);
 #endif
 
-#if TELEM_PROFILE >= TELEM_MINIMAL
+#if TELEM_PROFILE == TELEM_MINIMAL
   if (ambientCommit) {
     Serial.print("ag c=");
     Serial.println(ambientGate.darkAllowed ? "n" : "d");
@@ -61,7 +61,7 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   }
 #endif
 
-#if TELEM_PROFILE >= TELEM_SENSOR27
+#if TELEM_PROFILE == TELEM_SENSOR27
   if (shouldLogS27) {
     mLastS27LogMs = nowMs;
     const uint8_t rejectCode = static_cast<uint8_t>(c4001Rich.targetRejectedReason);
@@ -84,7 +84,7 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   }
 #endif
 
-#if TELEM_PROFILE >= TELEM_MINIMAL
+#if TELEM_PROFILE == TELEM_MINIMAL
   if (stateChanged) {
     mHasLastState = true;
     mLastState = context.state;
