@@ -17,6 +17,127 @@
 #include "../src/mapping/C4001TrackFilter.h"
 #include "../src/sensors/PresenceManager.h"
 #else
+#include <Wire.h>
+#include <DFRobot_C4001.h>
+
+namespace BuildConfig {
+constexpr uint16_t kTotalPixels = 77;
+constexpr uint32_t kC4001DropoutHoldMs = 450;
+constexpr float kAnthuriumRejectedDecayPerSecond = 2.40f;
+constexpr float kAnthuriumRejectedFloor = 0.0f;
+}
+
+namespace Pins {
+constexpr uint8_t kPixelDataPin = 6;
+}
+
+struct CorePresence {};
+
+struct C4001PresenceRich {
+  int targetNumber = 0;
+  float targetRangeM = 0.0f;
+  float targetSpeedMps = 0.0f;
+  float targetRangeRawM = 0.0f;
+  float targetSpeedRawM = 0.0f;
+  bool targetSampleAccepted = false;
+  uint8_t targetRejectedReason = 0;
+  int targetEnergy = 0;
+};
+
+class PresenceC4001 {
+public:
+  enum class LinkState : uint8_t { Online, DegradedHold, Offline };
+  enum class SampleKind : uint8_t { Unknown, Target, NoTarget, ReadFailure };
+  enum class RejectReason : uint8_t { None = 0, SpeedCap, RangeDelta, NearFieldCoherence, NoTarget };
+
+  struct LinkStatus {
+    LinkState state = LinkState::Offline;
+    SampleKind sampleKind = SampleKind::Unknown;
+    bool nearField = false;
+  };
+};
+
+class C4001TrackFilter {
+public:
+  enum class InputClass : uint8_t { Valid = 0, SoftReject = 1, HardAbsent = 2, LinkIssue = 3 };
+  enum class Phase : uint8_t { Valid = 0, Hold = 1, SoftReject = 2, HardAbsent = 3, Decay = 4, Empty = 5, LinkIssue = 6 };
+  struct Sample {
+    float rangeM = 0.0f, smoothedRangeM = 0.0f, chargeTarget = 0.0f, ingressTarget = 0.0f;
+    float fieldTarget = 0.0f, energyBoostTarget = 0.0f, speedMps = 0.0f, energyNorm = 0.0f;
+  };
+  struct Output { Sample sample{}; Phase phase = Phase::Empty; uint32_t ageMs = 0; bool hasTrack = false; };
+
+  void configure(uint32_t holdMs, float decayPerSecond, float decayFloor) { mHoldMs = holdMs; mDecayPerSecond = decayPerSecond; mDecayFloor = decayFloor; }
+  Output update(InputClass inputClass, uint32_t nowMs, const Sample* validSample = nullptr) {
+    if (inputClass == InputClass::Valid && validSample != nullptr) {
+      mHasTrack = true; mLastAcceptedMs = nowMs; mHeld = *validSample;
+      return {mHeld, Phase::Valid, 0u, true};
+    }
+    if (!mHasTrack) return {};
+    Output out{mHeld, Phase::Hold, (nowMs >= mLastAcceptedMs) ? (nowMs - mLastAcceptedMs) : 0u, true};
+    if (inputClass == InputClass::SoftReject) { out.phase = Phase::SoftReject; return out; }
+    if (out.ageMs <= mHoldMs) { out.phase = (inputClass == InputClass::LinkIssue) ? Phase::LinkIssue : Phase::Hold; return out; }
+    const float ageSec = static_cast<float>(out.ageMs - mHoldMs) / 1000.0f;
+    float scale = 1.0f - (ageSec * mDecayPerSecond);
+    if (scale < mDecayFloor) scale = 0.0f;
+    out.sample.rangeM *= scale; out.sample.smoothedRangeM *= scale; out.sample.chargeTarget *= scale;
+    out.sample.ingressTarget *= scale; out.sample.fieldTarget *= scale; out.sample.energyBoostTarget *= scale;
+    out.sample.speedMps *= scale; out.sample.energyNorm *= scale;
+    out.phase = (scale > 0.0f) ? Phase::Decay : Phase::Empty;
+    out.hasTrack = (scale > 0.0f);
+    if (!out.hasTrack) mHasTrack = false;
+    return out;
+  }
+
+private:
+  uint32_t mHoldMs = 450, mLastAcceptedMs = 0;
+  float mDecayPerSecond = 2.4f, mDecayFloor = 0.0f;
+  bool mHasTrack = false;
+  Sample mHeld{};
+};
+
+class PresenceManager {
+public:
+  void begin() {
+    Wire.begin();
+    mReady = mRadar.begin();
+    if (mReady) {
+      mRadar.setSensorMode(eSpeedMode);
+      mRadar.setDetectThres(11, 1200, 10);
+      mRadar.setFrettingDetection(eON);
+      mLink.state = PresenceC4001::LinkState::Online;
+    }
+  }
+
+  CorePresence readCore() {
+    if (!mReady) {
+      mLink.state = PresenceC4001::LinkState::Offline;
+      mLink.sampleKind = PresenceC4001::SampleKind::ReadFailure;
+      return {};
+    }
+    mRich.targetNumber = mRadar.getTargetNumber();
+    mRich.targetRangeRawM = mRadar.getTargetRange();
+    mRich.targetSpeedRawM = mRadar.getTargetSpeed();
+    mRich.targetEnergy = mRadar.getTargetEnergy();
+    mRich.targetRangeM = mRich.targetRangeRawM;
+    mRich.targetSpeedMps = mRich.targetSpeedRawM;
+    mRich.targetSampleAccepted = (mRich.targetNumber > 0) && (mRich.targetRangeRawM > 0.06f);
+    mRich.targetRejectedReason = mRich.targetSampleAccepted ? 0u : static_cast<uint8_t>(PresenceC4001::RejectReason::NoTarget);
+    mLink.state = PresenceC4001::LinkState::Online;
+    mLink.sampleKind = (mRich.targetNumber > 0) ? PresenceC4001::SampleKind::Target : PresenceC4001::SampleKind::NoTarget;
+    mLink.nearField = (mRich.targetRangeRawM > 0.0f) && (mRich.targetRangeRawM <= 1.80f);
+    return {};
+  }
+
+  const C4001PresenceRich& lastC4001Rich() const { return mRich; }
+  const PresenceC4001::LinkStatus& c4001LinkStatus() const { return mLink; }
+
+private:
+  DFRobot_C4001_I2C mRadar{&Wire, 0x2B};
+  bool mReady = false;
+  C4001PresenceRich mRich{};
+  PresenceC4001::LinkStatus mLink{};
+};
 #error "Cannot locate project src/ headers for C4001NearFieldProbe. Open this sketch from the repository tree."
 #endif
 
