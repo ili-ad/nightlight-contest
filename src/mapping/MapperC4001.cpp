@@ -4,6 +4,7 @@
 
 namespace {
 constexpr float kSpeedStillThresholdMps = 0.08f;
+constexpr float kSpeedStillHysteresisMps = 0.03f;
 
 float clamp01(float value) {
   if (value < 0.0f) {
@@ -146,9 +147,30 @@ void MapperC4001::applySceneDriveSmoothing(float dtSec, const EffectiveSample& s
   if (sample.phase == C4001TrackFilter::Phase::Accepted) {
     const float targetSpeedMag = normalizeSpeedMag(sample.speedMps);
     const float targetEnergyNorm = clamp01(sample.energyNorm);
-    mHeldSpeedMag = clamp01(stepToward(mHeldSpeedMag, targetSpeedMag, dtSec, 3.5f, 2.0f));
-    mHeldEnergyNorm = clamp01(stepToward(mHeldEnergyNorm, targetEnergyNorm, dtSec, 2.8f, 1.8f));
-    mHeldSpeedSigned = stepToward(mHeldSpeedSigned, sample.speedMps, dtSec, 1.8f, 1.8f);
+    mHeldSpeedMag = clamp01(stepToward(mHeldSpeedMag, targetSpeedMag, dtSec, 2.3f, 1.3f));
+    mHeldEnergyNorm = clamp01(stepToward(mHeldEnergyNorm, targetEnergyNorm, dtSec, 1.7f, 1.1f));
+    mHeldSpeedSigned = stepToward(mHeldSpeedSigned, sample.speedMps, dtSec, 1.0f, 1.0f);
+
+    const float warmEnter = -(kSpeedStillThresholdMps + kSpeedStillHysteresisMps);
+    const float warmExit = -(kSpeedStillThresholdMps - kSpeedStillHysteresisMps);
+    const float coolEnter = kSpeedStillThresholdMps + kSpeedStillHysteresisMps;
+    const float coolExit = kSpeedStillThresholdMps - kSpeedStillHysteresisMps;
+
+    if (mHueBand == HueBand::Warm) {
+      if (mHeldSpeedSigned >= warmExit) {
+        mHueBand = HueBand::Neutral;
+      }
+    } else if (mHueBand == HueBand::Cool) {
+      if (mHeldSpeedSigned <= coolExit) {
+        mHueBand = HueBand::Neutral;
+      }
+    } else {
+      if (mHeldSpeedSigned <= warmEnter) {
+        mHueBand = HueBand::Warm;
+      } else if (mHeldSpeedSigned >= coolEnter) {
+        mHueBand = HueBand::Cool;
+      }
+    }
   }
 }
 
@@ -169,17 +191,15 @@ RenderIntent MapperC4001::composeSceneIntent(const BehaviorContext& context,
   intent.sceneRejectReason = sample.rejectReason;
   intent.useLocalizedBlob = false;
 
-  const bool allowLiveKinetics = (sample.phase == C4001TrackFilter::Phase::Accepted);
+  const bool acceptedPhase = (sample.phase == C4001TrackFilter::Phase::Accepted);
   const float phaseBlend = clamp01(sample.influence);
-  const float liveSpeedMag = normalizeSpeedMag(sample.speedMps);
-  const float blendedSpeedMag = allowLiveKinetics ? liveSpeedMag : mHeldSpeedMag;
-  const float blendedEnergyNorm = allowLiveKinetics ? clamp01(sample.energyNorm) : mHeldEnergyNorm;
-  const float hueSpeedMps = allowLiveKinetics ? sample.speedMps : mHeldSpeedSigned;
+  const float blendedSpeedMag = mHeldSpeedMag;
+  const float blendedEnergyNorm = mHeldEnergyNorm;
 
-  if (hueSpeedMps < -kSpeedStillThresholdMps) {
+  if (mHueBand == HueBand::Warm) {
     intent.hue = 0.02f;
     intent.saturation = 0.86f;
-  } else if (hueSpeedMps > kSpeedStillThresholdMps) {
+  } else if (mHueBand == HueBand::Cool) {
     intent.hue = 0.58f;
     intent.saturation = 0.78f;
   } else {
@@ -189,7 +209,7 @@ RenderIntent MapperC4001::composeSceneIntent(const BehaviorContext& context,
 
   const float stillnessBoost = 1.0f - blendedSpeedMag;
   intent.rgbLevel = clamp01(0.11f + (intent.sceneCharge * 0.05f) + (blendedSpeedMag * 0.05f));
-  const float nonAcceptedBlend = allowLiveKinetics ? 1.0f : phaseBlend;
+  const float nonAcceptedBlend = acceptedPhase ? 1.0f : phaseBlend;
   intent.whiteLevel = context.darkAllowed
                           ? clamp01(intent.whiteLevel +
                                     ((blendedEnergyNorm * 0.04f) * nonAcceptedBlend) +
@@ -206,4 +226,5 @@ void MapperC4001::resetSceneState() {
   mHeldSpeedMag = 0.0f;
   mHeldEnergyNorm = 0.0f;
   mHeldSpeedSigned = 0.0f;
+  mHueBand = HueBand::Neutral;
 }

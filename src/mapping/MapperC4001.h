@@ -15,6 +15,12 @@ public:
                    const PresenceC4001::LinkStatus& linkStatus);
 
 private:
+  enum class HueBand : uint8_t {
+    Warm = 0,
+    Neutral = 1,
+    Cool = 2,
+  };
+
   enum class SampleClass : uint8_t {
     Accepted = 0,
     SoftReject = 1,
@@ -59,5 +65,6 @@ private:
   float mHeldSpeedMag = 0.0f;
   float mHeldEnergyNorm = 0.0f;
   float mHeldSpeedSigned = 0.0f;
+  HueBand mHueBand = HueBand::Neutral;
   uint32_t mLastSceneUpdateMs = 0;
 };
