@@ -37,6 +37,8 @@ public:
     uint32_t lastSampleMs = 0;
     bool noTargetHolding = false;
     bool noTargetCommitted = false;
+    bool nearField = false;
+    uint8_t nearFieldPendingCount = 0;
     SampleKind sampleKind = SampleKind::Unknown;
     RejectReason rejectReason = RejectReason::None;
     bool rejected = false;

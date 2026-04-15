@@ -45,7 +45,7 @@ enum class DebugInputMode : uint8_t {
 #if BUILD_C4001_PROBE
 #define TELEM_PROFILE TELEM_C4001_PROBE
 #else
-#define TELEM_PROFILE TELEM_NONE
+#define TELEM_PROFILE TELEM_DROPOUT_TINY
 #endif
 #endif
 

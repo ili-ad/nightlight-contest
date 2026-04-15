@@ -5,12 +5,12 @@
 #include "../BuildConfig.h"
 
 namespace {
-int16_t quantizeQ1000(float value) {
-  return static_cast<int16_t>(value * 1000.0f);
+int32_t quantizeQ1000(float value) {
+  return static_cast<int32_t>(value * 1000.0f);
 }
 
-int16_t quantizeMillimeters(float meters) {
-  return static_cast<int16_t>(meters * 1000.0f);
+int32_t quantizeMillimeters(float meters) {
+  return static_cast<int32_t>(meters * 1000.0f);
 }
 }  // namespace
 
@@ -18,6 +18,7 @@ void Telemetry::begin() {
 #if TELEM_PROFILE != TELEM_NONE
   Serial.begin(115200);
 #endif
+  mTinyBootLogged = false;
   mHasLastState = false;
   mLastState = LampState::BootAnimation;
   mHasLastLinkState = false;
@@ -27,6 +28,14 @@ void Telemetry::begin() {
   mHasDropoutPhase = false;
   mLastDropoutReason = 0;
   mHasDropoutReason = false;
+
+#if TELEM_PROFILE == TELEM_DROPOUT_TINY
+  if (!mTinyBootLogged) {
+    Serial.print("b,");
+    Serial.println(static_cast<uint8_t>(BuildConfig::kTelemetryProfile));
+    mTinyBootLogged = true;
+  }
+#endif
 }
 
 void Telemetry::update(const LampStateMachine& stateMachine,
@@ -54,12 +63,16 @@ void Telemetry::update(const LampStateMachine& stateMachine,
 #endif
 
 #if TELEM_PROFILE == TELEM_DROPOUT_TINY
+  const bool linkChanged = !mHasLastLinkState || (c4001LinkStatus.state != mLastLinkState);
+  const bool phaseChanged = !mHasDropoutPhase || (intent.sceneDropoutPhase != mLastDropoutPhase);
+  const bool reasonChanged = !mHasDropoutReason || (intent.sceneRejectReason != mLastDropoutReason);
   const bool periodic =
       ((mLastDropoutLogMs == 0) ||
        ((nowMs - mLastDropoutLogMs) >= BuildConfig::kTelemetryC4001RawLogIntervalMs));
   const bool inDropoutRelevantState =
       (context.state == LampState::ActiveInterpretive) || (context.state == LampState::Decay);
-  const bool shouldLogDropout = periodic && inDropoutRelevantState;
+  const bool shouldLogDropout =
+      inDropoutRelevantState && (phaseChanged || reasonChanged || periodic);
 #endif
 
 #if TELEM_PROFILE == TELEM_C4001_PROBE
@@ -111,27 +124,42 @@ void Telemetry::update(const LampStateMachine& stateMachine,
 #endif
 
 #if TELEM_PROFILE == TELEM_DROPOUT_TINY
+  if (linkChanged) {
+    mHasLastLinkState = true;
+    mLastLinkState = c4001LinkStatus.state;
+    Serial.print("l,");
+    Serial.println(static_cast<uint8_t>(c4001LinkStatus.state));
+  }
+
+  if (stateChanged) {
+    mHasLastState = true;
+    mLastState = context.state;
+    Serial.print("s,");
+    Serial.println(static_cast<uint8_t>(context.state));
+  }
+
   if (shouldLogDropout) {
+    mHasDropoutPhase = true;
+    mHasDropoutReason = true;
+    mLastDropoutPhase = intent.sceneDropoutPhase;
+    mLastDropoutReason = intent.sceneRejectReason;
     mLastDropoutLogMs = nowMs;
-    const int16_t rr = static_cast<int16_t>(c4001Rich.targetRangeRawM * 1000.0f);
-    const int16_t ar = static_cast<int16_t>(intent.sceneTargetRangeM * 1000.0f);
-    const int16_t ig = static_cast<int16_t>(intent.sceneIngressLevel * 1000.0f);
-    const int16_t ct = static_cast<int16_t>(intent.sceneChargeTarget * 1000.0f);
-    const int16_t cs = static_cast<int16_t>(intent.sceneCharge * 1000.0f);
-    Serial.print("d,p=");
+    Serial.print("d,");
     Serial.print(intent.sceneDropoutPhase);
-    Serial.print(",r=");
+    Serial.print(',');
     Serial.print(intent.sceneRejectReason);
-    Serial.print(",rr=");
-    Serial.print(rr);
-    Serial.print(",ar=");
-    Serial.print(ar);
-    Serial.print(",ig=");
-    Serial.print(ig);
-    Serial.print(",ct=");
-    Serial.print(ct);
-    Serial.print(",cs=");
-    Serial.println(cs);
+    Serial.print(',');
+    Serial.print(quantizeMillimeters(c4001Rich.targetRangeRawM));
+    Serial.print(',');
+    Serial.print(quantizeMillimeters(intent.sceneTargetRangeM));
+    Serial.print(',');
+    Serial.print(intent.sceneSampleAgeMs);
+    Serial.print(',');
+    Serial.print(quantizeQ1000(intent.sceneIngressLevel));
+    Serial.print(',');
+    Serial.print(quantizeQ1000(intent.sceneChargeTarget));
+    Serial.print(',');
+    Serial.println(quantizeQ1000(intent.sceneCharge));
   }
 #endif
 
