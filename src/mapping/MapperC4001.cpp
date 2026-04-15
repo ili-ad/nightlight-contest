@@ -58,7 +58,9 @@ namespace {
 
     const float startCharge = chargeAtRange(nearStart);
     const float t = clamp01((nearStart - clampedRange) / nearStart);
-    const float eased = t * t;
+    // Keep near-field compression on a fixed polynomial ease to avoid expensive
+    // exponent math in this hot path.
+    const float eased = t * t * (3.0f - 2.0f * t);
     const float nearCharge = startCharge + ((1.0f - startCharge) * eased);
     return clamp01((nearCharge > baseCharge) ? nearCharge : baseCharge);
   }
