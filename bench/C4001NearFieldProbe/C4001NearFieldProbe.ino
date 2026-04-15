@@ -67,25 +67,67 @@ public:
   };
   struct Output { Sample sample{}; Phase phase = Phase::Empty; uint32_t ageMs = 0; bool hasTrack = false; };
 
-  void configure(uint32_t holdMs, float decayPerSecond, float decayFloor) { mHoldMs = holdMs; mDecayPerSecond = decayPerSecond; mDecayFloor = decayFloor; }
+  void configure(uint32_t holdMs, float decayPerSecond, float decayFloor) {
+    mHoldMs = holdMs;
+    mDecayPerSecond = decayPerSecond;
+    mDecayFloor = decayFloor;
+  }
+
   Output update(InputClass inputClass, uint32_t nowMs, const Sample* validSample = nullptr) {
     if (inputClass == InputClass::Valid && validSample != nullptr) {
-      mHasTrack = true; mLastAcceptedMs = nowMs; mHeld = *validSample;
-      return {mHeld, Phase::Valid, 0u, true};
+      mHasTrack = true;
+      mLastAcceptedMs = nowMs;
+      mHeld = *validSample;
+
+      Output out;
+      out.sample = mHeld;
+      out.phase = Phase::Valid;
+      out.ageMs = 0u;
+      out.hasTrack = true;
+      return out;
     }
-    if (!mHasTrack) return {};
-    Output out{mHeld, Phase::Hold, (nowMs >= mLastAcceptedMs) ? (nowMs - mLastAcceptedMs) : 0u, true};
-    if (inputClass == InputClass::SoftReject) { out.phase = Phase::SoftReject; return out; }
-    if (out.ageMs <= mHoldMs) { out.phase = (inputClass == InputClass::LinkIssue) ? Phase::LinkIssue : Phase::Hold; return out; }
+
+    if (!mHasTrack) {
+      return Output();
+    }
+
+    Output out;
+    out.sample = mHeld;
+    out.phase = Phase::Hold;
+    out.ageMs = (nowMs >= mLastAcceptedMs) ? (nowMs - mLastAcceptedMs) : 0u;
+    out.hasTrack = true;
+
+    if (inputClass == InputClass::SoftReject) {
+      out.phase = Phase::SoftReject;
+      return out;
+    }
+
+    if (out.ageMs <= mHoldMs) {
+      out.phase = (inputClass == InputClass::LinkIssue) ? Phase::LinkIssue : Phase::Hold;
+      return out;
+    }
+
     const float ageSec = static_cast<float>(out.ageMs - mHoldMs) / 1000.0f;
     float scale = 1.0f - (ageSec * mDecayPerSecond);
-    if (scale < mDecayFloor) scale = 0.0f;
-    out.sample.rangeM *= scale; out.sample.smoothedRangeM *= scale; out.sample.chargeTarget *= scale;
-    out.sample.ingressTarget *= scale; out.sample.fieldTarget *= scale; out.sample.energyBoostTarget *= scale;
-    out.sample.speedMps *= scale; out.sample.energyNorm *= scale;
+    if (scale < mDecayFloor) {
+      scale = 0.0f;
+    }
+
+    out.sample.rangeM *= scale;
+    out.sample.smoothedRangeM *= scale;
+    out.sample.chargeTarget *= scale;
+    out.sample.ingressTarget *= scale;
+    out.sample.fieldTarget *= scale;
+    out.sample.energyBoostTarget *= scale;
+    out.sample.speedMps *= scale;
+    out.sample.energyNorm *= scale;
     out.phase = (scale > 0.0f) ? Phase::Decay : Phase::Empty;
     out.hasTrack = (scale > 0.0f);
-    if (!out.hasTrack) mHasTrack = false;
+
+    if (!out.hasTrack) {
+      mHasTrack = false;
+    }
+
     return out;
   }
 
