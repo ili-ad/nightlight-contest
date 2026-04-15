@@ -1,17 +1,21 @@
 #pragma once
 
+#include "C4001TrackFilter.h"
 #include "MapperShared.h"
 #include "../behavior/BehaviorContext.h"
+#include "../sensors/PresenceC4001.h"
 #include "../sensors/PresenceTypes.h"
 
 class MapperC4001 {
 public:
-  RenderIntent map(const BehaviorContext& context, const C4001PresenceRich& rich);
+  RenderIntent map(const BehaviorContext& context,
+                   const C4001PresenceRich& rich,
+                   const PresenceC4001::LinkStatus& linkStatus);
 
 private:
   struct EffectiveSample {
     bool valid;
-    uint8_t phase;
+    C4001TrackFilter::Phase phase;
     uint8_t rejectReason;
     uint32_t ageMs;
     float rangeM;
@@ -24,22 +28,9 @@ private:
     float energyNorm;
   };
 
-  struct InvalidSceneDrive {
-    float targetRangeM;
-    float targetSmoothedRangeM;
-    float chargeTarget;
-    float ingressTarget;
-    float fieldTarget;
-    float energyBoostTarget;
-    float speedMps;
-    float energyNorm;
-    uint32_t ageMs;
-    uint8_t phase;
-  };
-
-  InvalidSceneDrive applyInvalidSceneDrive(uint32_t nowMs) const;
   EffectiveSample buildEffectiveSample(const BehaviorContext& context,
                                        const C4001PresenceRich& rich,
+                                       const PresenceC4001::LinkStatus& linkStatus,
                                        bool allowValid);
   void acceptValidSample(const BehaviorContext& context, const C4001PresenceRich& rich);
   void applySceneDriveSmoothing(float dtSec, const EffectiveSample& sample);
@@ -53,7 +44,6 @@ private:
 
   bool mHasSmoothedRange = false;
   bool mHasChargeTarget = false;
-  bool mHasAcceptedSceneDrive = false;
   float mSmoothedRangeM = 0.0f;
   float mLastChargeTarget = 0.0f;
   float mHeldCharge = 0.0f;
@@ -64,11 +54,11 @@ private:
   float mHeldEnergyNorm = 0.0f;
   float mHeldRangeM = 0.0f;
   float mHeldSmoothedRangeM = 0.0f;
-  uint32_t mLastAcceptedSceneMs = 0;
   bool mHasSceneDriveState = false;
   float mSceneCharge = 0.0f;
   float mSceneIngressLevel = 0.0f;
   float mSceneFieldLevel = 0.0f;
   float mSceneEnergyBoost = 0.0f;
   uint32_t mLastSceneUpdateMs = 0;
+  C4001TrackFilter mTrackFilter;
 };
