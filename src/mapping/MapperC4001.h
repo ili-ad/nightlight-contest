@@ -33,6 +33,8 @@ private:
     float energyBoostTarget;
     float speedMps;
     float energyNorm;
+    float visibility;
+    float influence;
   };
 
   EffectiveSample buildEffectiveSample(const BehaviorContext& context,
@@ -42,8 +44,7 @@ private:
   void applySceneDriveSmoothing(float dtSec, const EffectiveSample& sample);
   RenderIntent composeSceneIntent(const BehaviorContext& context,
                                   RenderIntent intent,
-                                  const EffectiveSample& sample,
-                                  float speedMag) const;
+                                  const EffectiveSample& sample) const;
   void resetSceneState();
 
   MapperShared mShared;
@@ -53,5 +54,7 @@ private:
   float mSceneIngressLevel = 0.0f;
   float mSceneFieldLevel = 0.0f;
   float mSceneEnergyBoost = 0.0f;
+  float mHeldSpeedMag = 0.0f;
+  float mHeldEnergyNorm = 0.0f;
   uint32_t mLastSceneUpdateMs = 0;
 };

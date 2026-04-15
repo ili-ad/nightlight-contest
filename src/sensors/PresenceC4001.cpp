@@ -84,6 +84,17 @@ namespace {
     }
     return target;
   }
+
+  float smoothToward(float previous, float target, float riseAlpha, float fallAlpha) {
+    const float alpha = (target >= previous) ? riseAlpha : fallAlpha;
+    float clampedAlpha = alpha;
+    if (clampedAlpha < 0.0f) {
+      clampedAlpha = 0.0f;
+    } else if (clampedAlpha > 1.0f) {
+      clampedAlpha = 1.0f;
+    }
+    return previous + ((target - previous) * clampedAlpha);
+  }
 }
 
 namespace {
@@ -109,6 +120,10 @@ void PresenceC4001::begin() {
   stableHasChargeTarget_ = false;
   stableSmoothedRangeM_ = 0.0f;
   stableLastChargeTarget_ = 0.0f;
+  coreHintsInitialized_ = false;
+  corePresenceConfidence_ = 0.0f;
+  coreDistanceHint_ = 0.0f;
+  coreMotionHint_ = 0.0f;
   clearNearFieldCoherence();
   lastCore_ = {};
   lastRich_ = {};
@@ -288,7 +303,7 @@ float PresenceC4001::clamp01(float value) {
   return value;
 }
 
-CorePresence PresenceC4001::buildCoreFromStableTrack(const C4001PresenceRich& rich, uint32_t nowMs) const {
+CorePresence PresenceC4001::buildCoreFromStableTrack(const C4001PresenceRich& rich, uint32_t nowMs) {
   CorePresence core{};
   const bool hasStableTrack = rich.stableTrackHasTrack;
   const float stableRange = hasStableTrack ? rich.stableRangeM : 0.0f;
@@ -298,11 +313,42 @@ CorePresence PresenceC4001::buildCoreFromStableTrack(const C4001PresenceRich& ri
   const float distanceNearness = hasStableTrack ? clamp01(1.0f - (stableRange / kAssumedUsefulRangeM)) : 0.0f;
   const float motion = hasStableTrack ? clamp01(fabsf(stableSpeed) / kMotionSpeedScaleMps) : 0.0f;
 
+  const float rawPresenceConfidence = stableInfluence;
+  const float rawDistanceHint = distanceNearness * stableInfluence;
+  const float rawMotionHint = motion * stableInfluence;
+
+  if (!coreHintsInitialized_) {
+    corePresenceConfidence_ = rawPresenceConfidence;
+    coreDistanceHint_ = rawDistanceHint;
+    coreMotionHint_ = rawMotionHint;
+    coreHintsInitialized_ = true;
+  } else {
+    constexpr float kPresenceRiseAlpha = 0.26f;
+    constexpr float kPresenceFallAlpha = 0.10f;
+    constexpr float kDistanceRiseAlpha = 0.22f;
+    constexpr float kDistanceFallAlpha = 0.11f;
+    constexpr float kMotionRiseAlpha = 0.30f;
+    constexpr float kMotionFallAlpha = 0.14f;
+
+    corePresenceConfidence_ = smoothToward(corePresenceConfidence_,
+                                           rawPresenceConfidence,
+                                           kPresenceRiseAlpha,
+                                           kPresenceFallAlpha);
+    coreDistanceHint_ = smoothToward(coreDistanceHint_,
+                                     rawDistanceHint,
+                                     kDistanceRiseAlpha,
+                                     kDistanceFallAlpha);
+    coreMotionHint_ = smoothToward(coreMotionHint_,
+                                   rawMotionHint,
+                                   kMotionRiseAlpha,
+                                   kMotionFallAlpha);
+  }
+
   core.online = linkStatus_.online;
-  core.present = hasStableTrack && (stableVisibility > 0.0f);
-  core.presenceConfidence = stableInfluence;
-  core.distanceHint = distanceNearness * stableVisibility;
-  core.motionHint = motion * stableVisibility;
+  core.present = hasStableTrack && (stableVisibility > 0.0f) && (corePresenceConfidence_ > 0.01f);
+  core.presenceConfidence = corePresenceConfidence_;
+  core.distanceHint = coreDistanceHint_;
+  core.motionHint = coreMotionHint_;
   core.hasAngle = rich.hasAngle;
   core.angleNorm = rich.angleNorm;
   core.lateralBias = rich.lateralBias;
