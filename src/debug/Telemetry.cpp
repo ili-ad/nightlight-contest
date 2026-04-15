@@ -42,7 +42,6 @@ void Telemetry::begin() {
   mLastState = LampState::BootAnimation;
   mHasLastLinkState = false;
   mLastLinkState = PresenceC4001::LinkState::Offline;
-  mLastOfflineLogMs = 0;
   mLastS27LogMs = 0;
 }
 
@@ -86,11 +85,7 @@ void Telemetry::update(const LampStateMachine& stateMachine,
 
 #if TELEM_PROFILE >= TELEM_MINIMAL
   const bool linkTransitioned = !mHasLastLinkState || (c4001LinkStatus.state != mLastLinkState);
-  const bool offlinePeriodic =
-      (c4001LinkStatus.state == PresenceC4001::LinkState::Offline) &&
-      ((mLastOfflineLogMs == 0) ||
-       ((nowMs - mLastOfflineLogMs) >= BuildConfig::kTelemetryOfflineLogIntervalMs));
-  const bool linkChanged = linkTransitioned || offlinePeriodic;
+  const bool linkChanged = linkTransitioned;
 
   const bool ambientCommit = ambientGate.transitionCommitted;
 #endif
@@ -113,9 +108,6 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   if (linkChanged) {
     mHasLastLinkState = true;
     mLastLinkState = c4001LinkStatus.state;
-    if (c4001LinkStatus.state == PresenceC4001::LinkState::Offline) {
-      mLastOfflineLogMs = nowMs;
-    }
 
     Serial.print("ln=");
     Serial.print(linkStateCode(c4001LinkStatus.state));
