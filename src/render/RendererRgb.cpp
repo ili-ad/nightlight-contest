@@ -28,7 +28,10 @@ namespace {
     }
 
     const float falloff = 1.0f - normalizedDistance;
-    return powf(falloff, softness < 1.0f ? 1.0f : softness);
+    if (softness > 2.0f) {
+      return falloff * falloff * falloff;
+    }
+    return falloff * falloff;
   }
   void hsvToRgb(float hue, float saturation, float value, uint8_t& r, uint8_t& g, uint8_t& b) {
     const float s = clamp01(saturation);
