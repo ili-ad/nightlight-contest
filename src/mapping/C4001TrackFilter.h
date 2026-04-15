@@ -5,14 +5,16 @@
 class C4001TrackFilter {
 public:
   enum class InputClass : uint8_t {
-    Valid = 0,
+    Accepted = 0,
+    Valid = Accepted,
     SoftReject = 1,
     HardAbsent = 2,
     LinkIssue = 3,
   };
 
   enum class Phase : uint8_t {
-    Valid = 0,
+    Accepted = 0,
+    Valid = Accepted,
     Hold = 1,
     SoftReject = 2,
     HardAbsent = 3,
