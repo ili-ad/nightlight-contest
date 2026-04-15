@@ -17,10 +17,11 @@ namespace {
 
 void LampStateMachine::begin() {
   const uint32_t now = millis();
-  mContext.state = LampState::BootAnimation;
+  mContext.state = BuildConfig::kEnableBootAnimation ? LampState::BootAnimation
+                                                     : LampState::DayDormant;
   mContext.stateEnteredMs = now;
   mContext.nowMs = now;
-  mContext.activeEffectId = effectIdForState(LampState::BootAnimation);
+  mContext.activeEffectId = effectIdForState(mContext.state);
 }
 
 void LampStateMachine::update(bool darkAllowed, float ambientLux, const CorePresence& presence, bool forceFaultSafe) {
@@ -45,7 +46,8 @@ void LampStateMachine::update(bool darkAllowed, float ambientLux, const CorePres
 
   switch (mContext.state) {
     case LampState::BootAnimation:
-      if (mContext.elapsedInStateMs() >= BuildConfig::kBootAnimationMs) {
+      if (!BuildConfig::kEnableBootAnimation ||
+          mContext.elapsedInStateMs() >= BuildConfig::kBootAnimationMs) {
         transitionTo(mContext, darkAllowed ? LampState::NightIdle : LampState::DayDormant, now);
       }
       break;
@@ -83,7 +85,8 @@ void LampStateMachine::update(bool darkAllowed, float ambientLux, const CorePres
       break;
 
     case LampState::InterludeGlitch:
-      if (mContext.elapsedInStateMs() >= BuildConfig::kInterludeMaxMs) {
+      if (!BuildConfig::kEnableInterludes ||
+          mContext.elapsedInStateMs() >= BuildConfig::kInterludeMaxMs) {
         transitionTo(mContext, darkAllowed ? LampState::NightIdle : LampState::DayDormant, now);
       }
       break;

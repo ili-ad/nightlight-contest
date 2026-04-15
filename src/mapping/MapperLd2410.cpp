@@ -1,6 +1,7 @@
 #include "MapperLd2410.h"
 #include "../BuildConfig.h"
 
+#if BUILD_HAS_LD2410_BACKEND
 namespace {
   float clamp01(float value) {
     if (value < 0.0f) {
@@ -50,3 +51,9 @@ RenderIntent MapperLd2410::map(const BehaviorContext& context, const Ld2410Prese
 
   return mShared.map(context);
 }
+#else
+RenderIntent MapperLd2410::map(const BehaviorContext& context, const Ld2410PresenceRich& rich) const {
+  (void)rich;
+  return mShared.map(context);
+}
+#endif
