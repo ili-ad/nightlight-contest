@@ -13,7 +13,8 @@ public:
               const PresenceC4001::LinkStatus& c4001LinkStatus,
               const AmbientGateResult& ambientGate,
               const C4001PresenceRich& c4001Rich,
-              const RenderIntent& intent);
+              const RenderIntent& rawIntent,
+              const RenderIntent& finalIntent);
 
 private:
   bool mTinyBootLogged = false;
