@@ -213,6 +213,7 @@ namespace BuildConfig {
   constexpr uint32_t kTelemetryC4001RawLogIntervalMs = 400;
   constexpr float kAnthuriumNearFieldCompressionStartM = 0.90f;
   constexpr float kAnthuriumNearFieldCompressionExponent = 2.10f;
+  constexpr float kAnthuriumNearFieldChargeTargetMaxDeltaPerUpdate = 0.03f;
   constexpr float kAnthuriumChargeCompressionKnee = 0.68f;
   constexpr float kAnthuriumChargeCompressionSoftness = 0.72f;
   constexpr float kAnthuriumChargeTargetMaxDeltaPerUpdate = 0.06f;
