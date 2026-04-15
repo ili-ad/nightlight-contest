@@ -18,7 +18,7 @@ public:
 private:
   bool mHasLastLinkState = false;
   PresenceC4001::LinkState mLastLinkState = PresenceC4001::LinkState::Offline;
-  uint32_t mLastS27LogMs = 0;
+  uint32_t mLastDropoutLogMs = 0;
 
   bool mHasLastState = false;
   LampState mLastState = LampState::BootAnimation;

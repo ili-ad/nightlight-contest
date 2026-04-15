@@ -12,7 +12,7 @@ void Telemetry::begin() {
   mLastState = LampState::BootAnimation;
   mHasLastLinkState = false;
   mLastLinkState = PresenceC4001::LinkState::Offline;
-  mLastS27LogMs = 0;
+  mLastDropoutLogMs = 0;
 }
 
 void Telemetry::update(const LampStateMachine& stateMachine,
@@ -39,11 +39,13 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   const bool ambientCommit = ambientGate.transitionCommitted;
 #endif
 
-#if TELEM_PROFILE == TELEM_SENSOR27
-  const bool s27Periodic =
-      ((mLastS27LogMs == 0) ||
-       ((nowMs - mLastS27LogMs) >= BuildConfig::kTelemetryC4001RawLogIntervalMs));
-  const bool shouldLogS27 = s27Periodic && (context.state == LampState::ActiveInterpretive);
+#if TELEM_PROFILE == TELEM_DROPOUT_TINY
+  const bool periodic =
+      ((mLastDropoutLogMs == 0) ||
+       ((nowMs - mLastDropoutLogMs) >= BuildConfig::kTelemetryC4001RawLogIntervalMs));
+  const bool inDropoutRelevantState =
+      (context.state == LampState::ActiveInterpretive) || (context.state == LampState::Decay);
+  const bool shouldLogDropout = periodic && inDropoutRelevantState;
 #endif
 
 #if TELEM_PROFILE == TELEM_MINIMAL
@@ -61,26 +63,28 @@ void Telemetry::update(const LampStateMachine& stateMachine,
   }
 #endif
 
-#if TELEM_PROFILE == TELEM_SENSOR27
-  if (shouldLogS27) {
-    mLastS27LogMs = nowMs;
-    const uint8_t rejectCode = static_cast<uint8_t>(c4001Rich.targetRejectedReason);
-    Serial.print("s27 rr=");
-    Serial.print(c4001Rich.targetRangeRawM, 3);
-    Serial.print(" ar=");
-    Serial.print(c4001Rich.targetRangeM, 3);
-    Serial.print(" rv=");
-    Serial.print(c4001Rich.targetSpeedRawM, 3);
-    Serial.print(" av=");
-    Serial.print(c4001Rich.targetSpeedMps, 3);
-    Serial.print(" ct=");
-    Serial.print(intent.sceneChargeTarget, 3);
-    Serial.print(" cs=");
-    Serial.print(intent.sceneCharge, 3);
-    Serial.print(" ig=");
-    Serial.print(intent.sceneIngressLevel, 3);
-    Serial.print(" rj=");
-    Serial.println(rejectCode);
+#if TELEM_PROFILE == TELEM_DROPOUT_TINY
+  if (shouldLogDropout) {
+    mLastDropoutLogMs = nowMs;
+    const int16_t rr = static_cast<int16_t>(c4001Rich.targetRangeRawM * 1000.0f);
+    const int16_t ar = static_cast<int16_t>(intent.sceneTargetRangeM * 1000.0f);
+    const int16_t ig = static_cast<int16_t>(intent.sceneIngressLevel * 1000.0f);
+    const int16_t ct = static_cast<int16_t>(intent.sceneChargeTarget * 1000.0f);
+    const int16_t cs = static_cast<int16_t>(intent.sceneCharge * 1000.0f);
+    Serial.print("d,p=");
+    Serial.print(intent.sceneDropoutPhase);
+    Serial.print(",r=");
+    Serial.print(intent.sceneRejectReason);
+    Serial.print(",rr=");
+    Serial.print(rr);
+    Serial.print(",ar=");
+    Serial.print(ar);
+    Serial.print(",ig=");
+    Serial.print(ig);
+    Serial.print(",ct=");
+    Serial.print(ct);
+    Serial.print(",cs=");
+    Serial.println(cs);
   }
 #endif
 

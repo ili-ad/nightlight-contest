@@ -93,9 +93,4 @@ DebugInputSample DebugModes::sample(uint32_t nowMs) {
   sample.forceFaultSafe = true;
   return sample;
 }
-#else
-DebugInputSample DebugModes::sample(uint32_t nowMs) {
-  (void)nowMs;
-  return {};
-}
 #endif

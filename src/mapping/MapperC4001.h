@@ -16,6 +16,9 @@ private:
     float ingressTarget;
     float fieldTarget;
     float energyBoostTarget;
+    float speedMps;
+    float energyNorm;
+    uint8_t phase;
   };
 
   InvalidSceneDrive applyInvalidSceneDrive(uint32_t nowMs) const;
@@ -31,6 +34,8 @@ private:
   float mHeldIngressLevel = 0.0f;
   float mHeldFieldLevel = 0.0f;
   float mHeldEnergyBoost = 0.0f;
+  float mHeldSpeedMps = 0.0f;
+  float mHeldEnergyNorm = 0.0f;
   float mHeldRangeM = 0.0f;
   float mHeldSmoothedRangeM = 0.0f;
   uint32_t mLastAcceptedSceneMs = 0;

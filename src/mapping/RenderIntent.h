@@ -41,6 +41,8 @@ struct RenderIntent {
   float sceneTargetRangeM = 0.0f;
   float sceneTargetRangeSmoothedM = 0.0f;
   float sceneChargeTarget = 0.0f;
+  uint8_t sceneDropoutPhase = 0;   // 0=accepted, 1=hold, 2=decay, 3=empty
+  uint8_t sceneRejectReason = 0;   // latest C4001 reject code
 
   // Effect selection
   uint8_t effectId = 0;
