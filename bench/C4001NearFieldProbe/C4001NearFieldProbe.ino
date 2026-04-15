@@ -1,10 +1,24 @@
 #include <Adafruit_NeoPixel.h>
 #include <Arduino.h>
 
+#if __has_include("../../src/BuildConfig.h")
 #include "../../src/BuildConfig.h"
 #include "../../src/Pins.h"
 #include "../../src/mapping/C4001TrackFilter.h"
 #include "../../src/sensors/PresenceManager.h"
+#elif __has_include("../../../src/BuildConfig.h")
+#include "../../../src/BuildConfig.h"
+#include "../../../src/Pins.h"
+#include "../../../src/mapping/C4001TrackFilter.h"
+#include "../../../src/sensors/PresenceManager.h"
+#elif __has_include("../src/BuildConfig.h")
+#include "../src/BuildConfig.h"
+#include "../src/Pins.h"
+#include "../src/mapping/C4001TrackFilter.h"
+#include "../src/sensors/PresenceManager.h"
+#else
+#error "Cannot locate project src/ headers for C4001NearFieldProbe. Open this sketch from the repository tree."
+#endif
 
 namespace {
 constexpr uint8_t kStatusPixels = 8;
