@@ -93,7 +93,9 @@ namespace {
 
   RenderIntent buildRenderIntent(const BehaviorContext& context) {
     if (BuildConfig::kPresenceBackend == PresenceBackend::C4001) {
-      return gMapperC4001.map(context, gPresenceManager.lastC4001Rich());
+      return gMapperC4001.map(context,
+                              gPresenceManager.lastC4001Rich(),
+                              gPresenceManager.c4001LinkStatus());
     }
 
     return gMapper.map(context);
@@ -197,5 +199,6 @@ void App::loop() {
                     gPresenceManager.c4001LinkStatus(),
                     inputs.ambientGate,
                     gPresenceManager.lastC4001Rich(),
+                    rawIntent,
                     finalIntent);
 }

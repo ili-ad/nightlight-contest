@@ -5,11 +5,6 @@
 #include "../BuildConfig.h"
 
 namespace {
-constexpr uint8_t kScenePhaseAccepted = 0;
-constexpr uint8_t kScenePhaseHold = 1;
-constexpr uint8_t kScenePhaseDecay = 2;
-constexpr uint8_t kScenePhaseEmpty = 3;
-
 constexpr float kRoomRangeNearM = 0.45f;
 constexpr float kRoomRangeFarM = 6.50f;
 constexpr float kSpeedStillThresholdMps = 0.08f;
@@ -70,25 +65,6 @@ float mappedChargeFromRange(float rangeM) {
   return clamp01((nearCharge > baseCharge) ? nearCharge : baseCharge);
 }
 
-float applyRejectDecay(float value, float ageSec) {
-  if (value <= 0.0f) {
-    return 0.0f;
-  }
-  const float decayRate =
-      (BuildConfig::kAnthuriumRejectedDecayPerSecond <= 0.0f)
-          ? 0.0f
-          : BuildConfig::kAnthuriumRejectedDecayPerSecond;
-  if (decayRate <= 0.0f || ageSec <= 0.0f) {
-    return value;
-  }
-  const float floor = clamp01(BuildConfig::kAnthuriumRejectedFloor);
-  const float decayed = value - (ageSec * decayRate);
-  if (decayed > value) {
-    return value;
-  }
-  return (decayed <= floor) ? 0.0f : decayed;
-}
-
 float safeDeltaSec(uint32_t nowMs, uint32_t previousMs) {
   if (previousMs == 0 || nowMs <= previousMs) {
     return 0.0f;
@@ -110,7 +86,9 @@ float validRangeOrZero(float value) {
 }
 }  // namespace
 
-RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001PresenceRich& rich) {
+RenderIntent MapperC4001::map(const BehaviorContext& context,
+                              const C4001PresenceRich& rich,
+                              const PresenceC4001::LinkStatus& linkStatus) {
   if ((context.state != LampState::ActiveInterpretive) &&
       (context.state != LampState::Decay)) {
     resetSceneState();
@@ -125,16 +103,12 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
   const float dtSec = safeDeltaSec(context.nowMs, mLastSceneUpdateMs);
   mLastSceneUpdateMs = context.nowMs;
 
-  const bool allowValid = (context.state == LampState::ActiveInterpretive);
-  const EffectiveSample sample = buildEffectiveSample(context, rich, allowValid);
+  mTrackFilter.configure(BuildConfig::kC4001DropoutHoldMs,
+                         BuildConfig::kAnthuriumRejectedDecayPerSecond,
+                         BuildConfig::kAnthuriumRejectedFloor);
 
-  if (!sample.valid && (sample.phase == kScenePhaseEmpty)) {
-    mHasAcceptedSceneDrive = false;
-    mHasSmoothedRange = false;
-    mHasChargeTarget = false;
-    mSmoothedRangeM = 0.0f;
-    mLastChargeTarget = 0.0f;
-  }
+  const bool allowValid = (context.state == LampState::ActiveInterpretive);
+  const EffectiveSample sample = buildEffectiveSample(context, rich, linkStatus, allowValid);
 
   applySceneDriveSmoothing(dtSec, sample);
 
@@ -144,51 +118,75 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
 
 MapperC4001::EffectiveSample MapperC4001::buildEffectiveSample(const BehaviorContext& context,
                                                                const C4001PresenceRich& rich,
+                                                               const PresenceC4001::LinkStatus& linkStatus,
                                                                bool allowValid) {
   EffectiveSample sample{};
+  C4001TrackFilter::InputClass inputClass = C4001TrackFilter::InputClass::HardAbsent;
 
-  if (allowValid) {
-    const bool hasTarget = (rich.targetNumber > 0);
-    const bool hasValidRawRange = (rich.targetRangeRawM > 0.0f) &&
-                                  (rich.targetRangeRawM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
-    const bool hasValidAcceptedRange = (rich.targetRangeM > 0.0f) &&
-                                       (rich.targetRangeM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
-    const bool invalidSceneFrame = !hasTarget ||
-                                   !rich.targetSampleAccepted ||
-                                   (rich.targetRejectedReason != 0u) ||
-                                   !hasValidRawRange ||
-                                   !hasValidAcceptedRange;
-    if (!invalidSceneFrame) {
-      acceptValidSample(context, rich);
-      sample.valid = true;
-      sample.phase = kScenePhaseAccepted;
-      sample.rejectReason = 0;
-      sample.ageMs = 0;
-      sample.rangeM = mHeldRangeM;
-      sample.smoothedRangeM = mHeldSmoothedRangeM;
-      sample.chargeTarget = mHeldCharge;
-      sample.ingressTarget = mHeldIngressLevel;
-      sample.fieldTarget = mHeldFieldLevel;
-      sample.energyNorm = mHeldEnergyNorm;
-      sample.energyBoostTarget = mHeldEnergyBoost;
-      sample.speedMps = mHeldSpeedMps;
-      return sample;
-    }
-    sample.rejectReason = static_cast<uint8_t>(rich.targetRejectedReason);
+  const bool hasTarget = (rich.targetNumber > 0);
+  const bool hasRawRange = (rich.targetRangeRawM > 0.0f) &&
+                           (rich.targetRangeRawM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
+  const bool hasAcceptedRange = (rich.targetRangeM > 0.0f) &&
+                                (rich.targetRangeM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
+  const bool hasLinkIssue = (linkStatus.state == PresenceC4001::LinkState::Offline) ||
+                            (linkStatus.sampleKind == PresenceC4001::SampleKind::ReadFailure);
+
+  if (allowValid && hasTarget && hasRawRange && hasAcceptedRange &&
+      rich.targetSampleAccepted && (rich.targetRejectedReason == 0u)) {
+    acceptValidSample(context, rich);
+
+    C4001TrackFilter::Sample accepted{};
+    accepted.rangeM = mHeldRangeM;
+    accepted.smoothedRangeM = mHeldSmoothedRangeM;
+    accepted.chargeTarget = mHeldCharge;
+    accepted.ingressTarget = mHeldIngressLevel;
+    accepted.fieldTarget = mHeldFieldLevel;
+    accepted.energyBoostTarget = mHeldEnergyBoost;
+    accepted.speedMps = mHeldSpeedMps;
+    accepted.energyNorm = mHeldEnergyNorm;
+    const C4001TrackFilter::Output out =
+        mTrackFilter.update(C4001TrackFilter::InputClass::Valid, context.nowMs, &accepted);
+
+    sample.valid = true;
+    sample.phase = out.phase;
+    sample.rejectReason = 0u;
+    sample.ageMs = out.ageMs;
+    sample.rangeM = out.sample.rangeM;
+    sample.smoothedRangeM = out.sample.smoothedRangeM;
+    sample.chargeTarget = out.sample.chargeTarget;
+    sample.ingressTarget = out.sample.ingressTarget;
+    sample.fieldTarget = out.sample.fieldTarget;
+    sample.energyBoostTarget = out.sample.energyBoostTarget;
+    sample.speedMps = out.sample.speedMps;
+    sample.energyNorm = out.sample.energyNorm;
+    return sample;
   }
 
-  const InvalidSceneDrive invalid = applyInvalidSceneDrive(context.nowMs);
+  if (hasLinkIssue) {
+    inputClass = C4001TrackFilter::InputClass::LinkIssue;
+  } else if (hasTarget && hasRawRange) {
+    inputClass = C4001TrackFilter::InputClass::SoftReject;
+    sample.rejectReason = static_cast<uint8_t>(rich.targetRejectedReason);
+    if (sample.rejectReason == 0u) {
+      sample.rejectReason = static_cast<uint8_t>(PresenceC4001::RejectReason::NearFieldCoherence);
+    }
+  } else {
+    inputClass = C4001TrackFilter::InputClass::HardAbsent;
+    sample.rejectReason = static_cast<uint8_t>(PresenceC4001::RejectReason::NoTarget);
+  }
+
+  const C4001TrackFilter::Output out = mTrackFilter.update(inputClass, context.nowMs, nullptr);
   sample.valid = false;
-  sample.phase = invalid.phase;
-  sample.ageMs = invalid.ageMs;
-  sample.rangeM = invalid.targetRangeM;
-  sample.smoothedRangeM = invalid.targetSmoothedRangeM;
-  sample.chargeTarget = invalid.chargeTarget;
-  sample.ingressTarget = invalid.ingressTarget;
-  sample.fieldTarget = invalid.fieldTarget;
-  sample.energyBoostTarget = invalid.energyBoostTarget;
-  sample.speedMps = invalid.speedMps;
-  sample.energyNorm = invalid.energyNorm;
+  sample.phase = out.phase;
+  sample.ageMs = out.ageMs;
+  sample.rangeM = out.sample.rangeM;
+  sample.smoothedRangeM = out.sample.smoothedRangeM;
+  sample.chargeTarget = out.sample.chargeTarget;
+  sample.ingressTarget = out.sample.ingressTarget;
+  sample.fieldTarget = out.sample.fieldTarget;
+  sample.energyBoostTarget = out.sample.energyBoostTarget;
+  sample.speedMps = out.sample.speedMps;
+  sample.energyNorm = out.sample.energyNorm;
   return sample;
 }
 
@@ -213,7 +211,6 @@ void MapperC4001::acceptValidSample(const BehaviorContext& context,
   mHasChargeTarget = true;
   mLastChargeTarget = chargeTarget;
 
-  mHasAcceptedSceneDrive = true;
   mHeldCharge = chargeTarget;
   mHeldIngressLevel = clamp01(BuildConfig::kAnthuriumIngressBaseLevel + (chargeTarget * 0.75f));
   mHeldFieldLevel = clamp01(BuildConfig::kAnthuriumTorusFieldBaseLevel + (chargeTarget * 0.85f));
@@ -222,7 +219,7 @@ void MapperC4001::acceptValidSample(const BehaviorContext& context,
   mHeldSpeedMps = rich.targetSpeedMps;
   mHeldRangeM = rich.targetRangeM;
   mHeldSmoothedRangeM = mSmoothedRangeM;
-  mLastAcceptedSceneMs = context.nowMs;
+  (void)context;
 }
 
 void MapperC4001::applySceneDriveSmoothing(float dtSec, const EffectiveSample& sample) {
@@ -267,7 +264,7 @@ RenderIntent MapperC4001::composeSceneIntent(const BehaviorContext& context,
   intent.sceneIngressLevel = mSceneIngressLevel;
   intent.sceneFieldLevel = mSceneFieldLevel;
   intent.sceneEnergyBoost = mSceneEnergyBoost;
-  intent.sceneDropoutPhase = sample.phase;
+  intent.sceneDropoutPhase = static_cast<uint8_t>(sample.phase);
   intent.sceneRejectReason = sample.rejectReason;
   intent.useLocalizedBlob = false;
 
@@ -293,36 +290,10 @@ RenderIntent MapperC4001::composeSceneIntent(const BehaviorContext& context,
 }
 
 void MapperC4001::resetSceneState() {
-  mHasAcceptedSceneDrive = false;
   mHasSmoothedRange = false;
   mHasChargeTarget = false;
   mHasSceneDriveState = false;
   mLastSceneUpdateMs = 0;
   mSceneEnergyBoost = 0.0f;
-}
-
-MapperC4001::InvalidSceneDrive MapperC4001::applyInvalidSceneDrive(uint32_t nowMs) const {
-  if (!mHasAcceptedSceneDrive) {
-    return {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0u, kScenePhaseEmpty};
-  }
-
-  const uint32_t ageMs = nowMs - mLastAcceptedSceneMs;
-  const bool withinHold = ageMs <= BuildConfig::kAnthuriumRejectedHoldMs;
-  const float rejectAgeSec =
-      withinHold ? 0.0f : static_cast<float>(ageMs - BuildConfig::kAnthuriumRejectedHoldMs) / 1000.0f;
-  const float decayScale = withinHold ? 1.0f : applyRejectDecay(1.0f, rejectAgeSec);
-  const uint8_t phase =
-      withinHold ? kScenePhaseHold : ((decayScale > 0.0f) ? kScenePhaseDecay : kScenePhaseEmpty);
-  return {
-      mHeldRangeM * decayScale,
-      mHeldSmoothedRangeM * decayScale,
-      mHeldCharge * decayScale,
-      mHeldIngressLevel * decayScale,
-      mHeldFieldLevel * decayScale,
-      mHeldEnergyBoost * decayScale,
-      mHeldSpeedMps * decayScale,
-      mHeldEnergyNorm * decayScale,
-      ageMs,
-      phase,
-  };
+  mTrackFilter.reset();
 }

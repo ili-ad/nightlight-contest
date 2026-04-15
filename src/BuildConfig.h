@@ -323,7 +323,7 @@ namespace BuildConfig {
   constexpr float kAnthuriumTorusBrightnessSmoothingAlpha = 0.24f;
   constexpr float kAnthuriumIngressBrightnessSmoothingAlpha = 0.22f;
   constexpr float kAnthuriumLuminanceDeadband = 0.015f;
-  constexpr uint32_t kAnthuriumRejectedHoldMs = 280;
+  constexpr uint32_t kAnthuriumRejectedHoldMs = 450;
   constexpr float kAnthuriumRejectedDecayPerSecond = 2.40f;
   constexpr float kAnthuriumRejectedFloor = 0.0f;
 

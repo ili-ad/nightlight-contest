@@ -42,7 +42,7 @@ struct RenderIntent {
   float sceneTargetRangeSmoothedM = 0.0f;
   uint32_t sceneSampleAgeMs = 0;
   float sceneChargeTarget = 0.0f;
-  uint8_t sceneDropoutPhase = 0;   // 0=accepted, 1=hold, 2=decay, 3=empty
+  uint8_t sceneDropoutPhase = 0;   // 0=valid, 1=hold, 2=softReject, 3=hardAbsent, 4=decay, 5=empty, 6=linkIssue
   uint8_t sceneRejectReason = 0;   // latest C4001 reject code
 
   // Effect selection
