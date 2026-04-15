@@ -1,0 +1,121 @@
+presence_link=online online=1 holding=0 failures=0 age_ms=4
+state=BootAnimation darkAllowed=1 ambientLux=0.83 confidence=0.24 distance=0.31 motion=0.00
+presence confidence=0.24 distance=0.31 motion=0.00 age_ms=13
+presence confidence=0.81 distance=0.87 motion=0.00 age_ms=15
+state=NightIdle darkAllowed=1 ambientLux=0.87 confidence=0.81 distance=0.87 motion=0.00
+state=ActiveInterpretive darkAllowed=1 ambientLux=0.86 confidence=0.81 distance=0.87 motion=0.00
+presence confidence=0.81 distance=0.87 motion=0.00 age_ms=21
+presence confidence=0.81 distance=0.87 motion=0.00 age_ms=21
+presence confidence=0.82 distance=0.87 motion=0.04 age_ms=22
+presence confidence=0.81 distance=0.87 motion=0.02 age_ms=22
+presence confidence=0.81 distance=0.87 motion=0.00 age_ms=22
+presence confidence=0.81 distance=0.87 motion=0.00 age_ms=21
+presence confidence=0.83 distance=0.88 motion=0.10 age_ms=21
+presence confidence=0.83 distance=0.89 motion=0.08 age_ms=41
+presence confidence=0.82 distance=0.89 motion=0.02 age_ms=41
+presence confidence=0.82 distance=0.88 motion=0.07 age_ms=41
+presence confidence=0.82 distance=0.88 motion=0.07 age_ms=41
+presence confidence=0.82 distance=0.87 motion=0.05 age_ms=42
+presence confidence=0.82 distance=0.87 motion=0.03 age_ms=42
+presence confidence=0.81 distance=0.87 motion=0.01 age_ms=42
+presence confidence=0.81 distance=0.88 motion=0.01 age_ms=42
+presence confidence=0.82 distance=0.88 motion=0.00 age_ms=42
+presence confidence=0.82 distance=0.89 motion=0.01 age_ms=21
+presence confidence=0.82 distance=0.90 motion=0.00 age_ms=40
+presence confidence=0.82 distance=0.90 motion=0.00 age_ms=21
+state=DayDormant darkAllowed=0 ambientLux=862.87 confidence=0.83 distance=0.91 motion=0.06
+presence confidence=0.83 distance=0.91 motion=0.06 age_ms=30
+presence confidence=0.14 distance=0.99 motion=0.01 age_ms=31
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=30
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=32
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=31
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=33
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=3
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=8
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=12
+presence confidence=0.80 distance=0.90 motion=0.00 age_ms=10
+presence confidence=0.57 distance=0.91 motion=0.05 age_ms=8
+presence confidence=0.03 distance=1.00 motion=0.00 age_ms=17
+presence confidence=0.01 distance=1.00 motion=0.00 age_ms=24
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=2
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=188
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=2
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=2
+presence confidence=0.25 distance=0.96 motion=0.00 age_ms=3
+state=NightIdle darkAllowed=1 ambientLux=6.61 confidence=0.25 distance=0.96 motion=0.00
+state=ActiveInterpretive darkAllowed=1 ambientLux=4.96 confidence=0.25 distance=0.96 motion=0.00
+presence confidence=0.81 distance=0.89 motion=0.00 age_ms=21
+presence confidence=0.82 distance=0.89 motion=0.01 age_ms=42
+presence confidence=0.20 distance=0.98 motion=0.00 age_ms=22
+state=Decay darkAllowed=1 ambientLux=6.67 confidence=0.07 distance=0.99 motion=0.00
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=30
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=22
+state=NightIdle darkAllowed=1 ambientLux=6.67 confidence=0.00 distance=1.00 motion=0.00
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=23
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=25
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=27
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=27
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=29
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=31
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=32
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=26
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=29
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=28
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=29
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=28
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=28
+state=DayDormant darkAllowed=0 ambientLux=1658.08 confidence=0.00 distance=1.00 motion=0.00
+state=NightIdle darkAllowed=1 ambientLux=7.51 confidence=0.25 distance=0.96 motion=0.00
+state=ActiveInterpretive darkAllowed=1 ambientLux=6.88 confidence=0.25 distance=0.96 motion=0.00
+presence confidence=0.62 distance=0.91 motion=0.00 age_ms=40
+presence confidence=0.82 distance=0.89 motion=0.00 age_ms=22
+state=Decay darkAllowed=1 ambientLux=3.33 confidence=0.07 distance=0.99 motion=0.00
+presence confidence=0.02 distance=1.00 motion=0.00 age_ms=32
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=28
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=23
+state=NightIdle darkAllowed=1 ambientLux=3.33 confidence=0.00 distance=1.00 motion=0.00
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=21
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=18
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=19
+presence confidence=0.00 distance=1.00 motion=0.00 age_ms=17
+state=ActiveInterpretive darkAllowed=1 ambientLux=4.05 confidence=0.25 distance=0.96 motion=0.01
+presence confidence=0.54 distance=0.92 motion=0.01 age_ms=42
+presence confidence=0.82 distance=0.89 motion=0.01 age_ms=22
+presence confidence=0.82 distance=0.88 motion=0.06 age_ms=22
+presence confidence=0.83 distance=0.86 motion=0.17 age_ms=22
+presence confidence=0.82 distance=0.86 motion=0.05 age_ms=22
+presence confidence=0.86 distance=0.90 motion=0.30 age_ms=40
+presence confidence=0.84 distance=0.91 motion=0.09 age_ms=21
+presence confidence=0.85 distance=0.87 motion=0.26 age_ms=22
+presence confidence=0.83 distance=0.83 motion=0.20 age_ms=44
+presence confidence=0.82 distance=0.82 motion=0.14 age_ms=23
+presence confidence=0.81 distance=0.80 motion=0.15 age_ms=24
+presence confidence=0.82 distance=0.77 motion=0.24 age_ms=44
+presence confidence=0.79 distance=0.75 motion=0.12 age_ms=22
+presence confidence=0.78 distance=0.74 motion=0.07 age_ms=45
+presence confidence=0.78 distance=0.72 motion=0.07 age_ms=46
+presence confidence=0.78 distance=0.70 motion=0.10 age_ms=46
+presence confidence=0.78 distance=0.71 motion=0.12 age_ms=45
+presence confidence=0.78 distance=0.71 motion=0.12 age_ms=23
+presence confidence=0.77 distance=0.71 motion=0.02 age_ms=23
+presence confidence=0.95 distance=0.86 motion=0.99 age_ms=21
+presence confidence=0.82 distance=0.74 motion=0.29 age_ms=23
+presence confidence=0.78 distance=0.72 motion=0.08 age_ms=23
+presence confidence=0.78 distance=0.73 motion=0.10 age_ms=23
+presence confidence=0.81 distance=0.75 motion=0.27 age_ms=44
+presence confidence=0.83 distance=0.80 motion=0.30 age_ms=22
+presence confidence=0.81 distance=0.80 motion=0.12 age_ms=47
+presence confidence=0.79 distance=0.80 motion=0.03 age_ms=44
+presence confidence=0.80 distance=0.78 motion=0.08 age_ms=46
+presence confidence=0.79 distance=0.79 motion=0.05 age_ms=44
+presence confidence=0.82 distance=0.82 motion=0.20 age_ms=45
+presence confidence=0.82 distance=0.83 motion=0.12 age_ms=23
+presence confidence=0.84 distance=0.86 motion=0.26 age_ms=42
+presence confidence=0.86 distance=0.90 motion=0.27 age_ms=40
+presence confidence=0.85 distance=0.92 motion=0.15 age_ms=20
+presence confidence=0.83 distance=0.91 motion=0.05 age_ms=40
+presence confidence=0.83 distance=0.90 motion=0.07 age_ms=21
+presence confidence=0.83 distance=0.90 motion=0.03 age_ms=41
+presence confidence=0.82 distance=0.90 motion=0.00 age_ms=20
+presence confidence=0.82 distance=0.90 motion=0.00 age_ms=21
+presence confidence=0.82 distance=0.90 motion=0.00 age_ms=40

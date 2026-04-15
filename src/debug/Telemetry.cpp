@@ -56,8 +56,8 @@ void Telemetry::update(const LampStateMachine& stateMachine,
     mHasLastLinkState = true;
     mLastLinkState = c4001LinkStatus.state;
 
-    Serial.print("ln=");
-    Serial.println(linkStateCode(c4001LinkStatus.state));
+  Serial.print("ln=");
+  Serial.println(static_cast<uint8_t>(c4001LinkStatus.state));
   }
 #endif
 
@@ -89,8 +89,8 @@ void Telemetry::update(const LampStateMachine& stateMachine,
     mHasLastState = true;
     mLastState = context.state;
 
-    Serial.print("st=");
-    Serial.println(stateCode(context.state));
+  Serial.print("st=");
+  Serial.println(static_cast<uint8_t>(context.state));
   }
 #else
   (void)stateChanged;

@@ -3,7 +3,7 @@
 #include "../Pins.h"
 
 namespace {
-constexpr uint8_t brightnessFromLimit(float limit) {
+uint8_t brightnessFromLimit(float limit) {
   if (limit <= 0.0f) {
     return 0;
   }
