@@ -306,6 +306,9 @@ float PresenceC4001::clamp01(float value) {
 CorePresence PresenceC4001::buildCoreFromStableTrack(const C4001PresenceRich& rich, uint32_t nowMs) {
   CorePresence core{};
   const bool hasStableTrack = rich.stableTrackHasTrack;
+  const C4001TrackFilter::Phase stablePhase =
+      static_cast<C4001TrackFilter::Phase>(rich.stableTrackPhase);
+  const bool stableAccepted = (stablePhase == C4001TrackFilter::Phase::Accepted);
   const float stableRange = hasStableTrack ? rich.stableRangeM : 0.0f;
   const float stableSpeed = hasStableTrack ? rich.stableSpeedMps : 0.0f;
   const float stableVisibility = hasStableTrack ? clamp01(rich.stableVisibility) : 0.0f;
@@ -315,7 +318,8 @@ CorePresence PresenceC4001::buildCoreFromStableTrack(const C4001PresenceRich& ri
 
   const float rawPresenceConfidence = stableInfluence;
   const float rawDistanceHint = distanceNearness * stableInfluence;
-  const float rawMotionHint = motion * stableInfluence;
+  const float phaseMotionScale = stableAccepted ? 1.0f : clamp01(0.25f + (stableInfluence * 0.75f));
+  const float rawMotionHint = motion * stableInfluence * phaseMotionScale;
 
   if (!coreHintsInitialized_) {
     corePresenceConfidence_ = rawPresenceConfidence;
@@ -323,25 +327,25 @@ CorePresence PresenceC4001::buildCoreFromStableTrack(const C4001PresenceRich& ri
     coreMotionHint_ = rawMotionHint;
     coreHintsInitialized_ = true;
   } else {
-    constexpr float kPresenceRiseAlpha = 0.26f;
-    constexpr float kPresenceFallAlpha = 0.10f;
-    constexpr float kDistanceRiseAlpha = 0.22f;
-    constexpr float kDistanceFallAlpha = 0.11f;
-    constexpr float kMotionRiseAlpha = 0.30f;
-    constexpr float kMotionFallAlpha = 0.14f;
+    const float presenceRiseAlpha = stableAccepted ? 0.26f : 0.08f;
+    const float presenceFallAlpha = stableAccepted ? 0.10f : 0.06f;
+    const float distanceRiseAlpha = stableAccepted ? 0.22f : 0.07f;
+    const float distanceFallAlpha = stableAccepted ? 0.11f : 0.06f;
+    const float motionRiseAlpha = stableAccepted ? 0.30f : 0.05f;
+    const float motionFallAlpha = stableAccepted ? 0.14f : 0.05f;
 
     corePresenceConfidence_ = smoothToward(corePresenceConfidence_,
                                            rawPresenceConfidence,
-                                           kPresenceRiseAlpha,
-                                           kPresenceFallAlpha);
+                                           presenceRiseAlpha,
+                                           presenceFallAlpha);
     coreDistanceHint_ = smoothToward(coreDistanceHint_,
                                      rawDistanceHint,
-                                     kDistanceRiseAlpha,
-                                     kDistanceFallAlpha);
+                                     distanceRiseAlpha,
+                                     distanceFallAlpha);
     coreMotionHint_ = smoothToward(coreMotionHint_,
                                    rawMotionHint,
-                                   kMotionRiseAlpha,
-                                   kMotionFallAlpha);
+                                   motionRiseAlpha,
+                                   motionFallAlpha);
   }
 
   core.online = linkStatus_.online;

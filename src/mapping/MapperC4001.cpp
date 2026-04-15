@@ -144,8 +144,11 @@ void MapperC4001::applySceneDriveSmoothing(float dtSec, const EffectiveSample& s
       clamp01(stepToward(mSceneEnergyBoost, sample.energyBoostTarget, dtSec, kEnergyRisePerSec, kEnergyFallPerSec));
 
   if (sample.phase == C4001TrackFilter::Phase::Accepted) {
-    mHeldSpeedMag = normalizeSpeedMag(sample.speedMps);
-    mHeldEnergyNorm = clamp01(sample.energyNorm);
+    const float targetSpeedMag = normalizeSpeedMag(sample.speedMps);
+    const float targetEnergyNorm = clamp01(sample.energyNorm);
+    mHeldSpeedMag = clamp01(stepToward(mHeldSpeedMag, targetSpeedMag, dtSec, 3.5f, 2.0f));
+    mHeldEnergyNorm = clamp01(stepToward(mHeldEnergyNorm, targetEnergyNorm, dtSec, 2.8f, 1.8f));
+    mHeldSpeedSigned = stepToward(mHeldSpeedSigned, sample.speedMps, dtSec, 1.8f, 1.8f);
   }
 }
 
@@ -169,10 +172,9 @@ RenderIntent MapperC4001::composeSceneIntent(const BehaviorContext& context,
   const bool allowLiveKinetics = (sample.phase == C4001TrackFilter::Phase::Accepted);
   const float phaseBlend = clamp01(sample.influence);
   const float liveSpeedMag = normalizeSpeedMag(sample.speedMps);
-  const float blendedSpeedMag = allowLiveKinetics ? liveSpeedMag : (mHeldSpeedMag * phaseBlend);
-  const float blendedEnergyNorm = allowLiveKinetics ? clamp01(sample.energyNorm)
-                                                    : (mHeldEnergyNorm * phaseBlend);
-  const float hueSpeedMps = allowLiveKinetics ? sample.speedMps : 0.0f;
+  const float blendedSpeedMag = allowLiveKinetics ? liveSpeedMag : mHeldSpeedMag;
+  const float blendedEnergyNorm = allowLiveKinetics ? clamp01(sample.energyNorm) : mHeldEnergyNorm;
+  const float hueSpeedMps = allowLiveKinetics ? sample.speedMps : mHeldSpeedSigned;
 
   if (hueSpeedMps < -kSpeedStillThresholdMps) {
     intent.hue = 0.02f;
@@ -187,9 +189,11 @@ RenderIntent MapperC4001::composeSceneIntent(const BehaviorContext& context,
 
   const float stillnessBoost = 1.0f - blendedSpeedMag;
   intent.rgbLevel = clamp01(0.11f + (intent.sceneCharge * 0.05f) + (blendedSpeedMag * 0.05f));
+  const float nonAcceptedBlend = allowLiveKinetics ? 1.0f : phaseBlend;
   intent.whiteLevel = context.darkAllowed
-                          ? clamp01(intent.whiteLevel + (blendedEnergyNorm * 0.04f) +
-                                    (stillnessBoost * 0.02f))
+                          ? clamp01(intent.whiteLevel +
+                                    ((blendedEnergyNorm * 0.04f) * nonAcceptedBlend) +
+                                    ((stillnessBoost * 0.02f) * nonAcceptedBlend))
                           : 0.0f;
   intent.effectId = static_cast<uint8_t>(context.state);
   return intent;
@@ -201,4 +205,5 @@ void MapperC4001::resetSceneState() {
   mSceneEnergyBoost = 0.0f;
   mHeldSpeedMag = 0.0f;
   mHeldEnergyNorm = 0.0f;
+  mHeldSpeedSigned = 0.0f;
 }

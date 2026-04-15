@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 #include "C4001TrackFilter.h"
 #include "MapperShared.h"
 #include "../behavior/BehaviorContext.h"
@@ -56,5 +58,6 @@ private:
   float mSceneEnergyBoost = 0.0f;
   float mHeldSpeedMag = 0.0f;
   float mHeldEnergyNorm = 0.0f;
+  float mHeldSpeedSigned = 0.0f;
   uint32_t mLastSceneUpdateMs = 0;
 };
