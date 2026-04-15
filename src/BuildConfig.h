@@ -17,6 +17,16 @@ enum class DebugInputMode : uint8_t {
   SimulatedApproachLoop
 };
 
+#define PRESENCE_BACKEND_NONE 0
+#define PRESENCE_BACKEND_LD2410 1
+#define PRESENCE_BACKEND_C4001 2
+
+#define RENDER_BACKEND_RGB 0
+#define RENDER_BACKEND_RGBW 1
+
+#define DEBUG_INPUT_MODE_NONE 0
+#define DEBUG_INPUT_MODE_SIMULATED_APPROACH_LOOP 1
+
 #define TELEM_NONE 0
 #define TELEM_MINIMAL 1
 #define TELEM_SENSOR27 2
@@ -24,6 +34,44 @@ enum class DebugInputMode : uint8_t {
 #ifndef TELEM_PROFILE
 #define TELEM_PROFILE TELEM_SENSOR27
 #endif
+
+#ifndef BUILD_PRESENCE_BACKEND
+#define BUILD_PRESENCE_BACKEND PRESENCE_BACKEND_C4001
+#endif
+
+#ifndef BUILD_RENDER_BACKEND
+#define BUILD_RENDER_BACKEND RENDER_BACKEND_RGBW
+#endif
+
+#ifndef BUILD_DEBUG_INPUT_MODE
+#define BUILD_DEBUG_INPUT_MODE DEBUG_INPUT_MODE_NONE
+#endif
+
+#ifndef BUILD_MIN_SIZE_PROFILE
+#define BUILD_MIN_SIZE_PROFILE 0
+#endif
+
+#ifndef BUILD_ENABLE_BOOT_ANIMATION
+#if BUILD_MIN_SIZE_PROFILE
+#define BUILD_ENABLE_BOOT_ANIMATION 0
+#else
+#define BUILD_ENABLE_BOOT_ANIMATION 1
+#endif
+#endif
+
+#ifndef BUILD_ENABLE_INTERLUDES
+#if BUILD_MIN_SIZE_PROFILE
+#define BUILD_ENABLE_INTERLUDES 0
+#else
+#define BUILD_ENABLE_INTERLUDES 1
+#endif
+#endif
+
+#define BUILD_HAS_DEBUG_SIM (BUILD_DEBUG_INPUT_MODE != DEBUG_INPUT_MODE_NONE)
+#define BUILD_HAS_RGB_RENDERER (BUILD_RENDER_BACKEND == RENDER_BACKEND_RGB)
+#define BUILD_HAS_RGBW_RENDERER (BUILD_RENDER_BACKEND == RENDER_BACKEND_RGBW)
+#define BUILD_HAS_LD2410_BACKEND (BUILD_PRESENCE_BACKEND == PRESENCE_BACKEND_LD2410)
+#define BUILD_HAS_C4001_BACKEND (BUILD_PRESENCE_BACKEND == PRESENCE_BACKEND_C4001)
 
 namespace BuildConfig {
   // ---------------------------------------------------------------------------
@@ -43,15 +91,33 @@ namespace BuildConfig {
   // - BH1750 ambient via AmbientBh1750/AmbientGate
   // - C4001 presence via PresenceManager
   // Switch these only when intentionally testing alternate benches/backends.
-  constexpr PresenceBackend kPresenceBackend = PresenceBackend::C4001;
-  constexpr RenderBackend kRenderBackend = RenderBackend::RGBW;
+  constexpr PresenceBackend kPresenceBackend =
+#if BUILD_PRESENCE_BACKEND == PRESENCE_BACKEND_NONE
+      PresenceBackend::None;
+#elif BUILD_PRESENCE_BACKEND == PRESENCE_BACKEND_LD2410
+      PresenceBackend::LD2410;
+#else
+      PresenceBackend::C4001;
+#endif
+
+  constexpr RenderBackend kRenderBackend =
+#if BUILD_RENDER_BACKEND == RENDER_BACKEND_RGB
+      RenderBackend::RGB;
+#else
+      RenderBackend::RGBW;
+#endif
 
   // ---------------------------------------------------------------------------
   // Debug simulation
   // ---------------------------------------------------------------------------
   // Simulation remains available for explicit debug/repro runs.
   // Set to SimulatedApproachLoop only when intentionally overriding live input.
-  constexpr DebugInputMode kDebugInputMode = DebugInputMode::None;
+  constexpr DebugInputMode kDebugInputMode =
+#if BUILD_DEBUG_INPUT_MODE == DEBUG_INPUT_MODE_SIMULATED_APPROACH_LOOP
+      DebugInputMode::SimulatedApproachLoop;
+#else
+      DebugInputMode::None;
+#endif
 
   // Major simulated loop choreography boundaries.
   constexpr uint32_t kSimDarkIdleMs = 1200;
@@ -84,8 +150,8 @@ namespace BuildConfig {
   // ---------------------------------------------------------------------------
   // Lifecycle timing and feature flags
   // ---------------------------------------------------------------------------
-  constexpr bool kEnableBootAnimation = true;
-  constexpr bool kEnableInterludes = true;
+  constexpr bool kEnableBootAnimation = (BUILD_ENABLE_BOOT_ANIMATION != 0);
+  constexpr bool kEnableInterludes = (BUILD_ENABLE_INTERLUDES != 0);
   constexpr bool kEnableTelemetry = (TELEM_PROFILE != TELEM_NONE);
   constexpr uint8_t kTelemetryProfile = TELEM_PROFILE;
   constexpr uint32_t kTelemetryPresenceLogIntervalMs = 500;
@@ -302,4 +368,14 @@ namespace BuildConfig {
   static_assert((TELEM_PROFILE == TELEM_NONE) || (TELEM_PROFILE == TELEM_MINIMAL) ||
                     (TELEM_PROFILE == TELEM_SENSOR27),
                 "TELEM_PROFILE must be TELEM_NONE, TELEM_MINIMAL, or TELEM_SENSOR27");
+  static_assert((BUILD_PRESENCE_BACKEND == PRESENCE_BACKEND_NONE) ||
+                    (BUILD_PRESENCE_BACKEND == PRESENCE_BACKEND_LD2410) ||
+                    (BUILD_PRESENCE_BACKEND == PRESENCE_BACKEND_C4001),
+                "BUILD_PRESENCE_BACKEND must be PRESENCE_BACKEND_* enum value");
+  static_assert((BUILD_RENDER_BACKEND == RENDER_BACKEND_RGB) ||
+                    (BUILD_RENDER_BACKEND == RENDER_BACKEND_RGBW),
+                "BUILD_RENDER_BACKEND must be RENDER_BACKEND_RGB or RENDER_BACKEND_RGBW");
+  static_assert((BUILD_DEBUG_INPUT_MODE == DEBUG_INPUT_MODE_NONE) ||
+                    (BUILD_DEBUG_INPUT_MODE == DEBUG_INPUT_MODE_SIMULATED_APPROACH_LOOP),
+                "BUILD_DEBUG_INPUT_MODE must be DEBUG_INPUT_MODE_* enum value");
 }

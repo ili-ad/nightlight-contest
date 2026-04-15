@@ -1,11 +1,17 @@
 #include "App.h"
 #include <Arduino.h>
 #include "BuildConfig.h"
+#if BUILD_HAS_DEBUG_SIM
 #include "debug/DebugModes.h"
+#endif
 #include "behavior/LampStateMachine.h"
 #include "debug/Telemetry.h"
+#if BUILD_ENABLE_BOOT_ANIMATION
 #include "effects/BootEffects.h"
+#endif
+#if BUILD_ENABLE_INTERLUDES
 #include "effects/InterludeEffects.h"
+#endif
 #include "mapping/MapperC4001.h"
 #include "mapping/MapperShared.h"
 #include "mapping/RenderIntent.h"
@@ -55,14 +61,18 @@ namespace {
     inputs.ambientLux = inputs.ambientGate.gateLux;
 
     // 2) Optional explicit debug override.
-    const DebugInputSample sim = DebugModes::sample(millis());
-    if (sim.useSimulated) {
-      inputs.darkAllowed = sim.darkAllowed;
-      inputs.ambientLux = sim.ambientLux;
-      inputs.presence = sim.presence;
-    }
-    // 3) Fault-safe forcing remains available in debug simulation mode.
-    inputs.forceFaultSafe = sim.useSimulated && sim.forceFaultSafe;
+    #if BUILD_HAS_DEBUG_SIM
+      const DebugInputSample sim = DebugModes::sample(millis());
+      if (sim.useSimulated) {
+        inputs.darkAllowed = sim.darkAllowed;
+        inputs.ambientLux = sim.ambientLux;
+        inputs.presence = sim.presence;
+      }
+      // 3) Fault-safe forcing remains available in debug simulation mode.
+      inputs.forceFaultSafe = sim.useSimulated && sim.forceFaultSafe;
+    #else
+      inputs.forceFaultSafe = false;
+    #endif
 
     return inputs;
   }
@@ -97,14 +107,22 @@ namespace {
   void renderRgbwFrame(const BehaviorContext& context, const RenderIntent& intent) {
     switch (context.state) {
       case LampState::BootAnimation: {
-        BootFrame frame = BootEffects::sample(context.elapsedInStateMs());
-        gRendererRgbw.renderBoot(gPixelBus, frame);
+        #if BUILD_ENABLE_BOOT_ANIMATION
+          BootFrame frame = BootEffects::sample(context.elapsedInStateMs());
+          gRendererRgbw.renderBoot(gPixelBus, frame);
+        #else
+          gRendererRgbw.renderIntent(gPixelBus, intent);
+        #endif
         break;
       }
 
       case LampState::InterludeGlitch: {
-        InterludeFrame frame = InterludeEffects::marchingAnts(context.elapsedInStateMs());
-        gRendererRgbw.renderInterlude(gPixelBus, frame);
+        #if BUILD_ENABLE_INTERLUDES
+          InterludeFrame frame = InterludeEffects::marchingAnts(context.elapsedInStateMs());
+          gRendererRgbw.renderInterlude(gPixelBus, frame);
+        #else
+          gRendererRgbw.renderIntent(gPixelBus, intent);
+        #endif
         break;
       }
 

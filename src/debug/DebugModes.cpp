@@ -2,6 +2,7 @@
 
 #include "../BuildConfig.h"
 
+#if BUILD_HAS_DEBUG_SIM
 namespace {
   float normalizedRamp(uint32_t elapsed, uint32_t spanMs) {
     if (spanMs == 0) {
@@ -92,3 +93,9 @@ DebugInputSample DebugModes::sample(uint32_t nowMs) {
   sample.forceFaultSafe = true;
   return sample;
 }
+#else
+DebugInputSample DebugModes::sample(uint32_t nowMs) {
+  (void)nowMs;
+  return {};
+}
+#endif

@@ -1,4 +1,7 @@
 #include "RendererRgb.h"
+#include "../BuildConfig.h"
+
+#if BUILD_HAS_RGB_RENDERER
 #include "../topology/PixelPaths.h"
 #include <math.h>
 
@@ -155,3 +158,28 @@ void RendererRgb::renderInterlude(PixelBus& bus, const InterludeFrame& frame) {
     }
   }
 }
+#else
+void RendererRgb::begin(PixelBus& bus) {
+  (void)bus;
+}
+
+void RendererRgb::renderBoot(PixelBus& bus, const BootFrame& frame) {
+  (void)bus;
+  (void)frame;
+}
+
+void RendererRgb::renderIdle(PixelBus& bus, uint8_t level) {
+  (void)bus;
+  (void)level;
+}
+
+void RendererRgb::renderIntent(PixelBus& bus, const RenderIntent& intent) {
+  (void)bus;
+  (void)intent;
+}
+
+void RendererRgb::renderInterlude(PixelBus& bus, const InterludeFrame& frame) {
+  (void)bus;
+  (void)frame;
+}
+#endif
