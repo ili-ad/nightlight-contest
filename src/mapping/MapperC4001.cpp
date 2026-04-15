@@ -66,6 +66,21 @@ namespace {
     const float nearCharge = startCharge + ((1.0f - startCharge) * eased);
     return clamp01((nearCharge > baseCharge) ? nearCharge : baseCharge);
   }
+
+  float applyRejectDecay(float value, float ageSec) {
+    if (value <= 0.0f) {
+      return 0.0f;
+    }
+    const float decayRate = (BuildConfig::kAnthuriumRejectedDecayPerSecond <= 0.0f)
+                                ? 0.0f
+                                : BuildConfig::kAnthuriumRejectedDecayPerSecond;
+    if (decayRate <= 0.0f || ageSec <= 0.0f) {
+      return value;
+    }
+    const float decayed = value * expf(-decayRate * ageSec);
+    const float floor = clamp01(BuildConfig::kAnthuriumRejectedFloor);
+    return (decayed <= floor) ? 0.0f : decayed;
+  }
 }
 
 RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001PresenceRich& rich) {
@@ -77,7 +92,20 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
                              (rich.targetNumber > 0) &&
                              (rich.targetRangeM >= BuildConfig::kAnthuriumMinAcceptedRangeM);
     if (!targetValid) {
-      mHasChargeTarget = false;
+      if (mHasAcceptedSceneDrive) {
+        const uint32_t ageMs = context.nowMs - mLastAcceptedSceneMs;
+        const bool withinHold = ageMs <= BuildConfig::kAnthuriumRejectedHoldMs;
+        const float rejectAgeSec =
+            withinHold ? 0.0f : static_cast<float>(ageMs - BuildConfig::kAnthuriumRejectedHoldMs) / 1000.0f;
+        intent.activeSceneMode = ActiveSceneMode::AnthuriumReservoir;
+        intent.sceneTargetRangeM = mHeldRangeM;
+        intent.sceneTargetRangeSmoothedM = mHeldSmoothedRangeM;
+        intent.sceneChargeTarget = applyRejectDecay(mHeldChargeTarget, rejectAgeSec);
+        intent.sceneCharge = applyRejectDecay(mHeldCharge, rejectAgeSec);
+        intent.sceneIngressLevel = applyRejectDecay(mHeldIngressLevel, rejectAgeSec);
+        intent.sceneFieldLevel = applyRejectDecay(mHeldFieldLevel, rejectAgeSec);
+        intent.sceneEnergyBoost = applyRejectDecay(mHeldEnergyBoost, rejectAgeSec);
+      }
       intent.effectId = static_cast<uint8_t>(context.state);
       return intent;
     }
@@ -141,12 +169,27 @@ RenderIntent MapperC4001::map(const BehaviorContext& context, const C4001Presenc
                             : 0.0f;
 
     intent.effectId = static_cast<uint8_t>(context.state);
+    mHasAcceptedSceneDrive = true;
+    mHeldChargeTarget = intent.sceneChargeTarget;
+    mHeldCharge = intent.sceneCharge;
+    mHeldIngressLevel = intent.sceneIngressLevel;
+    mHeldFieldLevel = intent.sceneFieldLevel;
+    mHeldEnergyBoost = intent.sceneEnergyBoost;
+    mHeldRangeM = intent.sceneTargetRangeM;
+    mHeldSmoothedRangeM = intent.sceneTargetRangeSmoothedM;
+    mLastAcceptedSceneMs = context.nowMs;
     return intent;
   }
 
   if (context.state == LampState::Decay) {
+    mHasAcceptedSceneDrive = false;
+    mHasSmoothedRange = false;
+    mHasChargeTarget = false;
     return mShared.mapDecayBaseline(context);
   }
 
+  mHasAcceptedSceneDrive = false;
+  mHasSmoothedRange = false;
+  mHasChargeTarget = false;
   return mShared.map(context);
 }
