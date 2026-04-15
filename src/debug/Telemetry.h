@@ -16,6 +16,7 @@ public:
               const RenderIntent& intent);
 
 private:
+  bool mTinyBootLogged = false;
   bool mHasLastLinkState = false;
   PresenceC4001::LinkState mLastLinkState = PresenceC4001::LinkState::Offline;
   uint32_t mLastDropoutLogMs = 0;

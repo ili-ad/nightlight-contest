@@ -48,6 +48,8 @@ void PresenceC4001::begin() {
   linkStatus_.lastSuccessMs = online ? millis() : 0;
   linkStatus_.lastFailureMs = 0;
   linkStatus_.lastSampleMs = 0;
+  linkStatus_.nearField = false;
+  linkStatus_.nearFieldPendingCount = 0;
 
   lastCore_.online = online;
   lastCore_.timestampMs = millis();
@@ -87,6 +89,7 @@ PresenceC4001::Snapshot PresenceC4001::read() {
     linkStatus_.rejectReason = RejectReason::None;
 
     if (rich.targetNumber <= 0) {
+      linkStatus_.nearField = false;
       clearNearFieldCoherence();
       return applyNoTargetSuccess(rich, nowMs);
     }
@@ -289,6 +292,7 @@ PresenceC4001::Snapshot PresenceC4001::applyFailure(uint32_t nowMs) {
   linkStatus_.rejectReason = RejectReason::None;
   linkStatus_.noTargetHolding = false;
   linkStatus_.noTargetCommitted = false;
+  linkStatus_.nearField = false;
   linkStatus_.online =
       (linkStatus_.consecutiveFailures <= BuildConfig::kC4001MaxConsecutiveFailuresForOnline);
   lastRich_.targetNumber = 0;
@@ -383,6 +387,7 @@ bool PresenceC4001::acceptTargetSample(const C4001PresenceRich& rawRich,
   }
 
   const bool nearField = (rawRich.targetRangeM <= BuildConfig::kC4001NearFieldStartM);
+  linkStatus_.nearField = nearField;
   if (!nearField) {
     clearNearFieldCoherence();
     return true;
@@ -409,6 +414,7 @@ bool PresenceC4001::acceptTargetSample(const C4001PresenceRich& rawRich,
     nearFieldPendingRangeM_ = rawRich.targetRangeM;
     nearFieldPendingSpeedMps_ = rawRich.targetSpeedMps;
   }
+  linkStatus_.nearFieldPendingCount = nearFieldPendingCount_;
 
   if (nearFieldPendingCount_ < BuildConfig::kC4001NearFieldCoherentSamples) {
     reason = RejectReason::NearFieldCoherence;
@@ -426,4 +432,5 @@ void PresenceC4001::clearNearFieldCoherence() {
   nearFieldPendingCount_ = 0;
   nearFieldPendingRangeM_ = 0.0f;
   nearFieldPendingSpeedMps_ = 0.0f;
+  linkStatus_.nearFieldPendingCount = 0;
 }
