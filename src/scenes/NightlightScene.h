@@ -17,6 +17,7 @@ class NightlightScene {
   PixelOutput& output_;
   bool initialized_ = false;
 
-  // ARCH-064: keep this restrained and easy to disable/tune later.
+  // ARCH-064: tiny optional movement; default is a mostly steady output.
+  // Disable by setting to false, or tune via amplitude/period constants in .cpp.
   static constexpr bool kEnableBreathe = true;
 };

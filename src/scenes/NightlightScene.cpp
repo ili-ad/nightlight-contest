@@ -10,8 +10,8 @@ constexpr uint8_t kBaseG = 7;
 constexpr uint8_t kBaseB = 1;
 constexpr uint8_t kBaseW = 4;
 
-constexpr float kBreatheAmplitude = 0.06f;
-constexpr float kBreathePeriodMs = 9000.0f;
+constexpr float kBreatheAmplitude = 0.02f;
+constexpr float kBreathePeriodMs = 14000.0f;
 
 float clamp01(float v) {
   if (v < 0.0f) {
