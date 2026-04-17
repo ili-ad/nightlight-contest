@@ -79,6 +79,9 @@ const char* App::modeName(Mode mode) {
 }
 
 Mode App::resolveEffectiveMode(Mode userMode, AmbientLux::Band ambientBand) {
+  // ARCH-064 ambient policy:
+  // Off -> Off, Nightlight -> Nightlight,
+  // Anthurium + Dark -> Nightlight, else user-selected mode.
   if (userMode == Mode::Off) {
     return Mode::Off;
   }
