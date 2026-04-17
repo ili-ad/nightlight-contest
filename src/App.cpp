@@ -8,17 +8,29 @@
 namespace {
 LayoutMap gLayoutMap;
 PixelOutput gPixelOutput(gLayoutMap);
+App gApp(gLayoutMap, gPixelOutput);
 }  // namespace
 
-void App::setup() {
-  Serial.begin(115200);
-  Serial.println("Nightlight v2 scaffold boot (ARCH-061)");
+App::App(LayoutMap& layoutMap, PixelOutput& pixelOutput)
+    : layoutMap_(layoutMap), pixelOutput_(pixelOutput), anthuriumScene_(pixelOutput) {}
 
-  gPixelOutput.begin();
-  gPixelOutput.setRingPixel(0, 0, 0, 0, 16);
-  gPixelOutput.show();
+void App::setup() {
+  (void)layoutMap_;
+  Serial.begin(115200);
+  Serial.println("Nightlight v2 Anthurium boot (ARCH-062)");
+
+  pixelOutput_.begin();
+  stableSource_.begin();
+  anthuriumScene_.begin();
 }
 
 void App::loop() {
-  delay(1000);
+  const uint32_t nowMs = millis();
+  const StableTrack track = stableSource_.read(nowMs);
+  anthuriumScene_.render(track, nowMs);
+  delay(16);
+}
+
+App& getApp() {
+  return gApp;
 }

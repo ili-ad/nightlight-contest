@@ -1,11 +1,13 @@
 #include "src/App.h"
 
-App app;
+class LayoutMap;
+class PixelOutput;
+App& getApp();
 
 void setup() {
-  app.setup();
+  getApp().setup();
 }
 
 void loop() {
-  app.loop();
+  getApp().loop();
 }
