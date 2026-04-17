@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 
-#include "config/Profiles.h"
 #include "render/PixelOutput.h"
 #include "topology/LayoutMap.h"
 
@@ -13,17 +12,22 @@ App gApp(gLayoutMap, gPixelOutput);
 }  // namespace
 
 App::App(LayoutMap& layoutMap, PixelOutput& pixelOutput)
-    : layoutMap_(layoutMap), pixelOutput_(pixelOutput), anthuriumScene_(pixelOutput) {}
+    : layoutMap_(layoutMap),
+      pixelOutput_(pixelOutput),
+      anthuriumScene_(pixelOutput),
+      nightlightScene_(pixelOutput) {}
 
 void App::setup() {
   (void)layoutMap_;
   Serial.begin(115200);
-  Serial.println("Nightlight v2 mode-control boot (ARCH-063)");
+  Serial.println("Nightlight v2 ARCH-064 ambient override boot");
 
   pixelOutput_.begin();
   stableSource_.begin();
   clapDetector_.begin();
+  ambientLux_.begin();
   anthuriumScene_.begin();
+  nightlightScene_.begin();
 
   renderOff();
 }
@@ -37,12 +41,16 @@ void App::loop() {
     Serial.println(modeName(nextMode));
   }
 
-  switch (modeController_.currentMode()) {
+  const Mode userMode = modeController_.currentMode();
+  const AmbientLux::Band ambientBand = ambientLux_.readBand(nowMs);
+  const Mode effectiveMode = resolveEffectiveMode(userMode, ambientBand);
+
+  switch (effectiveMode) {
     case Mode::Off:
       renderOff();
       break;
     case Mode::Nightlight:
-      renderNightlightPlaceholder();
+      nightlightScene_.render(nowMs);
       break;
     case Mode::Anthurium: {
       const StableTrack track = stableSource_.read(nowMs);
@@ -70,27 +78,24 @@ const char* App::modeName(Mode mode) {
   }
 }
 
-void App::renderOff() {
-  pixelOutput_.clear();
-  pixelOutput_.show();
+Mode App::resolveEffectiveMode(Mode userMode, AmbientLux::Band ambientBand) {
+  if (userMode == Mode::Off) {
+    return Mode::Off;
+  }
+
+  if (userMode == Mode::Nightlight) {
+    return Mode::Nightlight;
+  }
+
+  if (userMode == Mode::Anthurium && ambientBand == AmbientLux::Band::Dark) {
+    return Mode::Nightlight;
+  }
+
+  return userMode;
 }
 
-void App::renderNightlightPlaceholder() {
-  constexpr uint8_t kR = 16;
-  constexpr uint8_t kG = 7;
-  constexpr uint8_t kB = 1;
-  constexpr uint8_t kW = 5;
-
-  for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
-    pixelOutput_.setRingPixel(i, kR, kG, kB, kW);
-  }
-  for (uint16_t i = 0; i < Profiles::kLeftStamenPixels; ++i) {
-    pixelOutput_.setLeftStamenPixel(i, kR, kG, kB, kW);
-  }
-  for (uint16_t i = 0; i < Profiles::kRightStamenPixels; ++i) {
-    pixelOutput_.setRightStamenPixel(i, kR, kG, kB, kW);
-  }
-
+void App::renderOff() {
+  pixelOutput_.clear();
   pixelOutput_.show();
 }
 
