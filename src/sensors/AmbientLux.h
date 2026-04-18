@@ -9,18 +9,21 @@ class AmbientLux {
     Dark = 1,
   };
 
-  void begin(uint8_t analogPin);
+  // Optional custom BH1750 I2C address. Bench profile default is 0x23.
+  void begin(uint8_t i2cAddress);
   void begin();
 
   Band readBand(uint32_t nowMs);
 
  private:
-  static float clamp01(float v);
+  bool initializeSensor();
+  bool readRawCount(uint16_t& rawCount);
 
-  uint8_t analogPin_ = 0;
+  uint8_t i2cAddress_ = 0;
   bool initialized_ = false;
+  bool sensorOnline_ = false;
   bool smoothingReady_ = false;
   uint32_t lastSampleMs_ = 0;
-  float smoothedNorm_ = 1.0f;
+  float smoothedLux_ = 0.0f;
   Band band_ = Band::Bright;
 };
