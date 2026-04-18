@@ -4,24 +4,19 @@
 #include <DFRobot_C4001.h>
 #include <Wire.h>
 
+#include "../config/Profiles.h"
+
 namespace {
 constexpr uint8_t kC4001I2cAddress = 0x2A;
-constexpr uint32_t kPollIntervalMs = 33;
-constexpr uint32_t kHoldMs = 420;
-
-constexpr float kRangeNearM = 0.35f;
-constexpr float kRangeFarM = 2.40f;
-constexpr float kStillSpeedMps = 0.06f;
-
 DFRobot_C4001_I2C gC4001(&Wire, kC4001I2cAddress);
 
-float normalizeRange(float rangeM) {
-  const float span = kRangeFarM - kRangeNearM;
+float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
+  const float span = profile.rangeFarM - profile.rangeNearM;
   if (span <= 0.001f) {
     return 0.0f;
   }
 
-  float t = (rangeM - kRangeNearM) / span;
+  float t = (rangeM - profile.rangeNearM) / span;
   if (t < 0.0f) {
     t = 0.0f;
   }
@@ -31,10 +26,10 @@ float normalizeRange(float rangeM) {
   return t;
 }
 
-float chargeFromRange(float rangeM) {
-  const float nearness = 1.0f - normalizeRange(rangeM);
+float chargeFromRange(float rangeM, const Profiles::C4001Profile& profile) {
+  const float nearness = 1.0f - normalizeRange(rangeM, profile);
   // Gentle near-field lift to preserve close-range elegance without blinking spikes.
-  const float curved = nearness + (0.35f * nearness * (1.0f - nearness));
+  const float curved = nearness + (profile.nearnessLiftGain * nearness * (1.0f - nearness));
   return curved > 1.0f ? 1.0f : curved;
 }
 }  // namespace
@@ -65,7 +60,9 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
     begin();
   }
 
-  if (lastPollMs_ != 0 && (nowMs - lastPollMs_) < kPollIntervalMs) {
+  const auto& profile = Profiles::c4001();
+
+  if (lastPollMs_ != 0 && (nowMs - lastPollMs_) < profile.pollIntervalMs) {
     StableTrack t;
     t.online = sensorReady_;
     t.hasTarget = stableHasTarget_;
@@ -101,28 +98,31 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
     stableHasTarget_ = true;
 
     const bool approaching = rawRangeM < stableRangeM_;
-    const float rangeAlpha = approaching ? 0.26f : 0.14f;
+    const float rangeAlpha = approaching ? profile.approachRangeAlpha : profile.retreatRangeAlpha;
     stableRangeM_ = smooth(stableRangeM_, rawRangeM, rangeAlpha);
-    stableSpeedMps_ = smooth(stableSpeedM_, rawSpeedMps, 0.22f);
+    stableSpeedMps_ = smooth(stableSpeedMps_, rawSpeedMps, profile.speedAlpha);
   } else {
-    if (stableHasTarget_ && (nowMs - lastSeenMs_) > kHoldMs) {
+    if (stableHasTarget_ && (nowMs - lastSeenMs_) > profile.holdMs) {
       stableHasTarget_ = false;
     }
-    stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, 0.10f);
+    stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, profile.speedDecayAlpha);
   }
 
-  const float targetCharge = stableHasTarget_ ? chargeFromRange(stableRangeM_) : 0.0f;
-  smoothedCharge_ = smooth(smoothedCharge_, targetCharge, stableHasTarget_ ? 0.20f : 0.06f);
+  const float targetCharge = stableHasTarget_ ? chargeFromRange(stableRangeM_, profile) : 0.0f;
+  smoothedCharge_ = smooth(smoothedCharge_, targetCharge,
+                           stableHasTarget_ ? profile.chargeRiseAlpha : profile.chargeFallAlpha);
 
-  const float ingressTarget = stableHasTarget_ ? (0.22f + (0.78f * smoothedCharge_)) : 0.0f;
-  smoothedIngress_ = smooth(smoothedIngress_, ingressTarget, stableHasTarget_ ? 0.24f : 0.08f);
+  const float ingressTarget = stableHasTarget_ ? (profile.ingressBase + (profile.ingressGain * smoothedCharge_)) : 0.0f;
+  smoothedIngress_ = smooth(smoothedIngress_, ingressTarget,
+                            stableHasTarget_ ? profile.ingressRiseAlpha : profile.ingressFallAlpha);
 
   const float continuityTarget = stableHasTarget_ ? 1.0f : 0.0f;
-  continuity_ = smooth(continuity_, continuityTarget, stableHasTarget_ ? 0.30f : 0.03f);
+  continuity_ = smooth(continuity_, continuityTarget,
+                       stableHasTarget_ ? profile.continuityRiseAlpha : profile.continuityFallAlpha);
 
   if (!stableHasTarget_) {
     phase_ = StableTrack::MotionPhase::None;
-  } else if (fabsf(stableSpeedMps_) <= kStillSpeedMps) {
+  } else if (fabsf(stableSpeedMps_) <= profile.stillSpeedMps) {
     phase_ = StableTrack::MotionPhase::Still;
   } else if (stableSpeedMps_ < 0.0f) {
     phase_ = StableTrack::MotionPhase::Approach;

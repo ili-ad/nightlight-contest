@@ -18,6 +18,6 @@ class NightlightScene {
   bool initialized_ = false;
 
   // ARCH-064: tiny optional movement; default is a mostly steady output.
-  // Disable by setting to false, or tune via amplitude/period constants in .cpp.
+  // Disable by setting to false, or tune amplitude/period in Profiles::NightlightProfile.
   static constexpr bool kEnableBreathe = true;
 };

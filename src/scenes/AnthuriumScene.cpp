@@ -4,23 +4,6 @@
 
 #include "../config/Profiles.h"
 
-namespace {
-constexpr float kIngressTravelSec = 1.45f;
-constexpr float kIngressWidth = 0.18f;
-constexpr float kIngressFloor = 0.08f;
-
-constexpr float kTorusDecayPerSecond = 0.65f;
-constexpr float kTorusDiffusionPerSecond = 0.35f;
-constexpr float kTorusAccumulationGain = 1.85f;
-constexpr float kTorusInstantGain = 0.55f;
-constexpr float kTorusBaseField = 0.02f;
-constexpr uint16_t kIngressA = 7;
-constexpr uint16_t kIngressB = 29;
-constexpr float kIngressSpread = 3.4f;
-
-constexpr float kLumaRiseAlpha = 0.24f;
-constexpr float kLumaFallAlpha = 0.14f;
-}  // namespace
 
 AnthuriumScene::AnthuriumScene(PixelOutput& output) : output_(output) {}
 
@@ -57,7 +40,9 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   lastNowMs_ = nowMs;
   const float dtSec = static_cast<float>(dtMs) / 1000.0f;
 
-  ingressPhase_ += dtSec / kIngressTravelSec;
+  const auto& profile = Profiles::anthurium();
+
+  ingressPhase_ += dtSec / profile.ingressTravelSec;
   while (ingressPhase_ >= 1.0f) {
     ingressPhase_ -= 1.0f;
   }
@@ -71,9 +56,9 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   phaseColor(track, r, g, b, w);
 
   for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
-    const float field = clamp01(kTorusBaseField + torus_[i]);
-    const float target = clamp01((field * track.continuity) + (track.charge * kTorusInstantGain));
-    const float alpha = target > ringLuma_[i] ? kLumaRiseAlpha : kLumaFallAlpha;
+    const float field = clamp01(profile.torusBaseField + torus_[i]);
+    const float target = clamp01((field * track.continuity) + (track.charge * profile.torusInstantGain));
+    const float alpha = target > ringLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
     ringLuma_[i] = ringLuma_[i] + ((target - ringLuma_[i]) * alpha);
 
     output_.setRingPixel(i,
@@ -85,7 +70,7 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
 
   for (uint16_t i = 0; i < Profiles::kLeftStamenPixels; ++i) {
     const float ingress = sampleIngress(i, Profiles::kLeftStamenPixels, track);
-    const float alpha = ingress > leftLuma_[i] ? kLumaRiseAlpha : kLumaFallAlpha;
+    const float alpha = ingress > leftLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
     leftLuma_[i] = leftLuma_[i] + ((ingress - leftLuma_[i]) * alpha);
 
     output_.setLeftStamenPixel(i,
@@ -97,7 +82,7 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
 
   for (uint16_t i = 0; i < Profiles::kRightStamenPixels; ++i) {
     const float ingress = sampleIngress(i, Profiles::kRightStamenPixels, track);
-    const float alpha = ingress > rightLuma_[i] ? kLumaRiseAlpha : kLumaFallAlpha;
+    const float alpha = ingress > rightLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
     rightLuma_[i] = rightLuma_[i] + ((ingress - rightLuma_[i]) * alpha);
 
     output_.setRightStamenPixel(i,
@@ -111,9 +96,11 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
 }
 
 void AnthuriumScene::updateTorus(const StableTrack& track, float dtSec) {
+  const auto& profile = Profiles::anthurium();
+
   float tmp[kRingPixels] = {0.0f};
-  const float decay = expf(-kTorusDecayPerSecond * dtSec);
-  const float diffusion = kTorusDiffusionPerSecond * dtSec;
+  const float decay = expf(-profile.torusDecayPerSecond * dtSec);
+  const float diffusion = profile.torusDiffusionPerSecond * dtSec;
 
   for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
     const uint16_t left = (i == 0) ? (Profiles::kRingPixels - 1) : (i - 1);
@@ -125,11 +112,11 @@ void AnthuriumScene::updateTorus(const StableTrack& track, float dtSec) {
     tmp[i] = clamp01(v);
   }
 
-  const float input = track.charge * track.continuity * kTorusAccumulationGain * dtSec;
+  const float input = track.charge * track.continuity * profile.torusAccumulationGain * dtSec;
 
   for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
-    float da = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(kIngressA)));
-    float db = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(kIngressB)));
+    float da = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(profile.ingressA)));
+    float db = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(profile.ingressB)));
     if (da > (Profiles::kRingPixels * 0.5f)) {
       da = Profiles::kRingPixels - da;
     }
@@ -137,8 +124,8 @@ void AnthuriumScene::updateTorus(const StableTrack& track, float dtSec) {
       db = Profiles::kRingPixels - db;
     }
 
-    tmp[i] = clamp01(tmp[i] + (input * (polynomialKernel(da, kIngressSpread) +
-                                        polynomialKernel(db, kIngressSpread))));
+    tmp[i] = clamp01(tmp[i] + (input * (polynomialKernel(da, profile.ingressSpread) +
+                                        polynomialKernel(db, profile.ingressSpread))));
   }
 
   for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
@@ -147,33 +134,29 @@ void AnthuriumScene::updateTorus(const StableTrack& track, float dtSec) {
 }
 
 void AnthuriumScene::phaseColor(const StableTrack& track, float& r, float& g, float& b, float& w) const {
+  const auto& profile = Profiles::anthurium();
+  const Profiles::RgbwFloat* color = &profile.idleColor;
+
   switch (track.phase) {
     case StableTrack::MotionPhase::Approach:
-      r = 1.00f;
-      g = 0.28f;
-      b = 0.08f;
-      w = 0.20f;
+      color = &profile.approachColor;
       break;
     case StableTrack::MotionPhase::Still:
-      r = 0.95f;
-      g = 0.62f;
-      b = 0.20f;
-      w = 0.34f;
+      color = &profile.stillColor;
       break;
     case StableTrack::MotionPhase::Retreat:
-      r = 0.72f;
-      g = 0.26f;
-      b = 0.45f;
-      w = 0.12f;
+      color = &profile.retreatColor;
       break;
     case StableTrack::MotionPhase::None:
     default:
-      r = 0.55f;
-      g = 0.22f;
-      b = 0.10f;
-      w = 0.05f;
+      color = &profile.idleColor;
       break;
   }
+
+  r = color->r;
+  g = color->g;
+  b = color->b;
+  w = color->w;
 }
 
 float AnthuriumScene::sampleIngress(uint16_t pixel, uint16_t count, const StableTrack& track) const {
@@ -186,8 +169,10 @@ float AnthuriumScene::sampleIngress(uint16_t pixel, uint16_t count, const Stable
     delta = 1.0f - delta;
   }
 
-  const float conveyor = polynomialKernel(delta, kIngressWidth);
-  const float floor = track.charge * kIngressFloor;
+  const auto& profile = Profiles::anthurium();
+
+  const float conveyor = polynomialKernel(delta, profile.ingressWidth);
+  const float floor = track.charge * profile.ingressFloor;
   const float level = floor + (conveyor * track.ingressLevel);
   return clamp01(level);
 }

@@ -5,14 +5,6 @@
 #include "../config/Profiles.h"
 
 namespace {
-constexpr uint8_t kBaseR = 18;
-constexpr uint8_t kBaseG = 7;
-constexpr uint8_t kBaseB = 1;
-constexpr uint8_t kBaseW = 4;
-
-constexpr float kBreatheAmplitude = 0.02f;
-constexpr float kBreathePeriodMs = 14000.0f;
-
 float clamp01(float v) {
   if (v < 0.0f) {
     return 0.0f;
@@ -35,17 +27,19 @@ void NightlightScene::render(uint32_t nowMs) {
     begin();
   }
 
+  const auto& profile = Profiles::nightlight();
+
   float scale = 1.0f;
   if (kEnableBreathe) {
-    const float phase = (static_cast<float>(nowMs) / kBreathePeriodMs) * 2.0f * PI;
-    scale += sinf(phase) * kBreatheAmplitude;
+    const float phase = (static_cast<float>(nowMs) / profile.breathePeriodMs) * 2.0f * PI;
+    scale += sinf(phase) * profile.breatheAmplitude;
   }
   scale = clamp01(scale);
 
-  const uint8_t r = scaleChannel(kBaseR, scale);
-  const uint8_t g = scaleChannel(kBaseG, scale);
-  const uint8_t b = scaleChannel(kBaseB, scale);
-  const uint8_t w = scaleChannel(kBaseW, scale);
+  const uint8_t r = scaleChannel(profile.baseR, scale);
+  const uint8_t g = scaleChannel(profile.baseG, scale);
+  const uint8_t b = scaleChannel(profile.baseB, scale);
+  const uint8_t w = scaleChannel(profile.baseW, scale);
 
   for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
     output_.setRingPixel(i, r, g, b, w);
