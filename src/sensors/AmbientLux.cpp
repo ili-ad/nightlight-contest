@@ -1,30 +1,71 @@
 #include "AmbientLux.h"
 
 #include <Arduino.h>
+#include <Wire.h>
 
 namespace {
-constexpr uint8_t kDefaultAmbientPin = A1;
-constexpr uint32_t kSampleIntervalMs = 100;
+constexpr uint8_t kDefaultBh1750Address = 0x23;
+constexpr uint32_t kSampleIntervalMs = 120;
 
-// Normalized thresholds with hysteresis.
-constexpr float kEnterDarkNorm = 0.18f;
-constexpr float kExitDarkNorm = 0.24f;
-constexpr float kSmoothingAlpha = 0.16f;
+constexpr uint8_t kBh1750PowerOn = 0x01;
+constexpr uint8_t kBh1750Reset = 0x07;
+constexpr uint8_t kBh1750ContinuousHighResMode = 0x10;
+
+constexpr float kLuxScale = 1.0f / 1.2f;
+constexpr float kEnterDarkLux = 18.0f;
+constexpr float kExitDarkLux = 24.0f;
+constexpr float kSmoothingAlpha = 0.20f;
 }  // namespace
 
-void AmbientLux::begin(uint8_t analogPin) {
-  analogPin_ = analogPin;
-  pinMode(analogPin_, INPUT);
+bool AmbientLux::initializeSensor() {
+  Wire.beginTransmission(i2cAddress_);
+  if (Wire.endTransmission() != 0) {
+    return false;
+  }
+
+  Wire.beginTransmission(i2cAddress_);
+  Wire.write(kBh1750PowerOn);
+  if (Wire.endTransmission() != 0) {
+    return false;
+  }
+
+  Wire.beginTransmission(i2cAddress_);
+  Wire.write(kBh1750Reset);
+  if (Wire.endTransmission() != 0) {
+    return false;
+  }
+
+  Wire.beginTransmission(i2cAddress_);
+  Wire.write(kBh1750ContinuousHighResMode);
+  return (Wire.endTransmission() == 0);
+}
+
+bool AmbientLux::readRawCount(uint16_t& rawCount) {
+  const int bytesRead = Wire.requestFrom(static_cast<int>(i2cAddress_), 2);
+  if (bytesRead != 2 || Wire.available() < 2) {
+    return false;
+  }
+
+  const uint8_t msb = static_cast<uint8_t>(Wire.read());
+  const uint8_t lsb = static_cast<uint8_t>(Wire.read());
+  rawCount = static_cast<uint16_t>((msb << 8) | lsb);
+  return true;
+}
+
+void AmbientLux::begin(uint8_t i2cAddress) {
+  i2cAddress_ = i2cAddress;
+  Wire.begin();
 
   initialized_ = true;
+  sensorOnline_ = initializeSensor();
   smoothingReady_ = false;
   lastSampleMs_ = 0;
-  smoothedNorm_ = 1.0f;
+  smoothedLux_ = 0.0f;
   band_ = Band::Bright;
 }
 
 void AmbientLux::begin() {
-  begin(kDefaultAmbientPin);
+  begin(kDefaultBh1750Address);
 }
 
 AmbientLux::Band AmbientLux::readBand(uint32_t nowMs) {
@@ -37,33 +78,38 @@ AmbientLux::Band AmbientLux::readBand(uint32_t nowMs) {
   }
   lastSampleMs_ = nowMs;
 
-  const int raw = analogRead(analogPin_);
-  const float norm = clamp01(static_cast<float>(raw) / 1023.0f);
+  uint16_t rawCount = 0;
+  if (!readRawCount(rawCount)) {
+    sensorOnline_ = initializeSensor();
+    if (sensorOnline_) {
+      if (!readRawCount(rawCount)) {
+        sensorOnline_ = false;
+      }
+    }
+  } else {
+    sensorOnline_ = true;
+  }
+
+  if (!sensorOnline_) {
+    return band_;
+  }
+
+  const float lux = max(0.0f, static_cast<float>(rawCount) * kLuxScale);
 
   if (!smoothingReady_) {
-    smoothedNorm_ = norm;
+    smoothedLux_ = lux;
     smoothingReady_ = true;
   } else {
-    smoothedNorm_ += (norm - smoothedNorm_) * kSmoothingAlpha;
+    smoothedLux_ += (lux - smoothedLux_) * kSmoothingAlpha;
   }
 
   if (band_ == Band::Dark) {
-    if (smoothedNorm_ >= kExitDarkNorm) {
+    if (smoothedLux_ >= kExitDarkLux) {
       band_ = Band::Bright;
     }
-  } else if (smoothedNorm_ <= kEnterDarkNorm) {
+  } else if (smoothedLux_ <= kEnterDarkLux) {
     band_ = Band::Dark;
   }
 
   return band_;
-}
-
-float AmbientLux::clamp01(float v) {
-  if (v < 0.0f) {
-    return 0.0f;
-  }
-  if (v > 1.0f) {
-    return 1.0f;
-  }
-  return v;
 }
