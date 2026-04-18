@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "../config/Profiles.h"
 #include "../model/StableTrack.h"
 #include "../render/PixelOutput.h"
 
@@ -26,8 +27,8 @@ class AnthuriumScene {
   uint32_t lastNowMs_ = 0;
   float ingressPhase_ = 0.0f;
 
-  static constexpr uint16_t kRingPixels = 45;
-  static constexpr uint16_t kStamenPixels = 16;
+  static constexpr uint16_t kRingPixels = Profiles::kRingPixels;
+  static constexpr uint16_t kStamenPixels = Profiles::kLeftStamenPixels;
 
   float torus_[kRingPixels] = {0.0f};
   float ringLuma_[kRingPixels] = {0.0f};
