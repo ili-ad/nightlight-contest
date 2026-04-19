@@ -2,6 +2,13 @@
 
 namespace Profiles {
 namespace {
+constexpr TopologyProfile kTopologyProfile = {{
+    {SpanRole::Ring, kRingPixels, false},
+    {SpanRole::LeftStamen, kLeftStamenPixels, false},
+    // Right stamen is reversed relative to logical center->tip direction.
+    {SpanRole::RightStamen, kRightStamenPixels, true},
+}};
+
 constexpr C4001Profile kC4001Profile = {
     33,     // pollIntervalMs
     420,    // holdMs
@@ -60,11 +67,16 @@ constexpr NightlightProfile kNightlightProfile = {
 };
 
 constexpr ProductProfile kProductProfile = {
+    kTopologyProfile,
     kC4001Profile,
     kAnthuriumProfile,
     kNightlightProfile,
 };
 }  // namespace
+
+const TopologyProfile& topology() {
+  return kProductProfile.topology;
+}
 
 const C4001Profile& c4001() {
   return kProductProfile.c4001;

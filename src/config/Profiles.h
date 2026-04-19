@@ -9,6 +9,24 @@ constexpr uint16_t kRingPixels = 45;
 constexpr uint16_t kLeftStamenPixels = 16;
 constexpr uint16_t kRightStamenPixels = 16;
 
+enum class SpanRole : uint8_t {
+  Ring,
+  LeftStamen,
+  RightStamen,
+};
+
+struct SpanProfile {
+  SpanRole role;
+  uint16_t logicalCount;
+  bool reversed;
+};
+
+constexpr uint8_t kTopologySpanCount = 3;
+
+struct TopologyProfile {
+  SpanProfile spans[kTopologySpanCount];
+};
+
 struct C4001Profile {
   uint32_t pollIntervalMs;
   uint32_t holdMs;
@@ -75,11 +93,13 @@ struct NightlightProfile {
 };
 
 struct ProductProfile {
+  TopologyProfile topology;
   C4001Profile c4001;
   AnthuriumProfile anthurium;
   NightlightProfile nightlight;
 };
 
+const TopologyProfile& topology();
 const C4001Profile& c4001();
 const AnthuriumProfile& anthurium();
 const NightlightProfile& nightlight();

@@ -2,13 +2,11 @@
 
 #include <stdint.h>
 
+#include "../config/Profiles.h"
+
 class LayoutMap {
  public:
-  enum class Role : uint8_t {
-    Ring,
-    LeftStamen,
-    RightStamen,
-  };
+  using Role = Profiles::SpanRole;
 
   struct Span {
     Role role;
@@ -27,7 +25,7 @@ class LayoutMap {
   uint16_t totalPhysicalPixels() const;
 
  private:
-  static constexpr uint8_t kSpanCount = 3;
+  static constexpr uint8_t kSpanCount = Profiles::kTopologySpanCount;
 
   uint16_t roleToPhysical(Role role, uint16_t logicalPixel) const;
 
