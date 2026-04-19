@@ -1,17 +1,14 @@
 #include "LayoutMap.h"
 
-#include "../config/Profiles.h"
+LayoutMap::LayoutMap() : spans_{}, totalPhysicalPixels_(0) {
+  const Profiles::TopologyProfile& topology = Profiles::topology();
 
-LayoutMap::LayoutMap()
-    : spans_{{
-          // Assumed physical chain order for ARCH-061:
-          // 1) ring, 2) left stamen, 3) right stamen.
-          {Role::Ring, Profiles::kRingPixels, false, 0},
-          {Role::LeftStamen, Profiles::kLeftStamenPixels, false, 0},
-          // Right stamen is reversed relative to logical center->tip direction.
-          {Role::RightStamen, Profiles::kRightStamenPixels, true, 0},
-      }},
-      totalPhysicalPixels_(0) {
+  for (uint8_t i = 0; i < kSpanCount; ++i) {
+    spans_[i].role = topology.spans[i].role;
+    spans_[i].logicalCount = topology.spans[i].logicalCount;
+    spans_[i].reversed = topology.spans[i].reversed;
+  }
+
   uint16_t cursor = 0;
   for (uint8_t i = 0; i < kSpanCount; ++i) {
     spans_[i].physicalStart = cursor;
