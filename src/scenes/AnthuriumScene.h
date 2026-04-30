@@ -26,7 +26,7 @@ class AnthuriumScene {
   void updateJDelayLines(const StableTrack& track, float dtSec, Profiles::RgbwFloat& rightImpulse, Profiles::RgbwFloat& leftImpulse);
   void updateFrontRingField(float dtSec, const Profiles::RgbwFloat& rightImpulse, const Profiles::RgbwFloat& leftImpulse);
   void updateRearRingField(float dtSec);
-  void updateContinuousSignal(const StableTrack& track);
+  void updateContinuousSignal(const StableTrack& track, float dtSec);
   Profiles::RgbwFloat signalColor(const StableTrack& track) const;
   static void fadeColor(RgbwField& color, float fade);
   static void addColor(RgbwField& color, const Profiles::RgbwFloat& add, float amount);
@@ -37,11 +37,15 @@ class AnthuriumScene {
   uint32_t lastNowMs_ = 0;
   float jConveyorPhase_ = 0.0f;
   float proximity_ = 0.0f;
-  float signedSpeedMps_ = 0.0f;
-  float speedLevel_ = 0.0f;
-  float approachLevel_ = 0.0f;
-  float retreatLevel_ = 0.0f;
-  float motionLevel_ = 0.0f;
+  float motionSignal_ = 0.0f;
+  float chargeSignal_ = 0.0f;
+  float ingressSignal_ = 0.0f;
+  float displayHue_ = 0.33f;
+  float displaySat_ = 0.12f;
+  float displayLevel_ = 0.04f;
+  float displayWhite_ = 0.01f;
+  bool hadRangeSample_ = false;
+  float prevAcceptedRangeM_ = 0.0f;
   uint32_t heartbeatFrame_ = 0;
   uint32_t heartbeatLastLogMs_ = 0;
 
