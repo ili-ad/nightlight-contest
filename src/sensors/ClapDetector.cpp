@@ -22,6 +22,10 @@ constexpr uint32_t kQuietRearmMs = 45;
 constexpr uint32_t kModeAdvanceLockoutMs = 600;
 
 constexpr float kFirstReleaseFactor = 0.56f;
+
+#ifndef CLAP_DIAGNOSTICS_VERBOSE
+#define CLAP_DIAGNOSTICS_VERBOSE 0
+#endif
 }  // namespace
 
 void ClapDetector::begin(uint8_t micAnalogPin) {
@@ -100,6 +104,14 @@ bool ClapDetector::update(uint32_t nowMs) {
       firstClapMs_ = nowMs;
       lastTriggerMs_ = nowMs;
       armQuietSinceMs_ = 0;
+#if CLAP_DIAGNOSTICS_VERBOSE
+      Serial.print("clap=first nowMs=");
+      Serial.print(nowMs);
+      Serial.print(" env=");
+      Serial.print(env_, 2);
+      Serial.print(" thr1=");
+      Serial.println(thr1, 2);
+#endif
     }
   } else {
     if (!readyForSecond_) {
@@ -121,6 +133,16 @@ bool ClapDetector::update(uint32_t nowMs) {
         armQuietSinceMs_ = 0;
         lastTriggerMs_ = nowMs;
         modeAdvanceLockoutUntilMs_ = nowMs + kModeAdvanceLockoutMs;
+#if CLAP_DIAGNOSTICS_VERBOSE
+        Serial.print("clap=double nowMs=");
+        Serial.print(nowMs);
+        Serial.print(" dt=");
+        Serial.print(dt);
+        Serial.print(" env=");
+        Serial.print(env_, 2);
+        Serial.print(" thr2=");
+        Serial.println(thr2, 2);
+#endif
         return true;
       }
 
