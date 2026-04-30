@@ -73,6 +73,12 @@ void App::loop() {
         nextMode = modeController_.advanceMode();
         modeChanged = true;
         break;
+      case 'r':
+      case 'R':
+        Serial.println("event=c4001_init_attempt");
+        stableSource_.requestManualInit();
+        stableSource_.service(nowMs);
+        break;
       default:
         break;
     }
@@ -102,6 +108,7 @@ void App::loop() {
       const StableTrack track = stableSource_.read(nowMs);
       maybePrintAnthuriumTelemetry(track, nowMs);
       anthuriumScene_.render(track, nowMs);
+      stableSource_.service(nowMs);
       break;
     }
     default:

@@ -38,6 +38,7 @@ struct C4001Profile {
   uint32_t pollIntervalMs;
   uint32_t holdMs;
   uint32_t initRetryMs;
+  bool enableC4001AutoInit;
 
   float rangeNearM;
   float rangeFarM;

@@ -7,6 +7,8 @@
 class C4001StableSource {
  public:
   void begin();
+  void service(uint32_t nowMs);
+  void requestManualInit();
   StableTrack read(uint32_t nowMs);
 
  private:
@@ -16,6 +18,7 @@ class C4001StableSource {
   bool initialized_ = false;
   bool wireReady_ = false;
   bool sensorReady_ = false;
+  bool manualInitRequested_ = false;
   uint32_t lastPollMs_ = 0;
   uint32_t lastInitAttemptMs_ = 0;
   uint32_t lastSeenMs_ = 0;
