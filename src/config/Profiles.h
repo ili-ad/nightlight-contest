@@ -90,6 +90,8 @@ struct AnthuriumProfile {
   float idleFrontRingFloor;
   float idleRearRingFloor;
   float idleJFloor;
+  bool rightJIngressReversed;
+  bool leftJIngressReversed;
 
   RgbwFloat approachColor;
   RgbwFloat stillColor;

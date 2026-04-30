@@ -20,7 +20,7 @@ class AnthuriumScene {
 
   void updateTorus(const StableTrack& track, float dtSec);
   void phaseColor(const StableTrack& track, float& r, float& g, float& b, float& w) const;
-  float sampleIngress(uint16_t pixel, uint16_t count, const StableTrack& track) const;
+  float sampleIngress(uint16_t pixel, uint16_t count, const StableTrack& track, bool reverseLogical) const;
 
   PixelOutput& output_;
   bool initialized_ = false;

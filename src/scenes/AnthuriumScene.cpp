@@ -103,7 +103,7 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   }
 
   for (uint16_t i = 0; i < kLeftJPixels; ++i) {
-    const float ingress = sampleIngress(i, kLeftJPixels, track);
+    const float ingress = sampleIngress(i, kLeftJPixels, track, profile.leftJIngressReversed);
     const float alpha = ingress > leftJLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
     leftJLuma_[i] = leftJLuma_[i] + ((ingress - leftJLuma_[i]) * alpha);
     const float visibleLuma = leftJLuma_[i] > profile.idleJFloor ? leftJLuma_[i] : profile.idleJFloor;
@@ -117,7 +117,7 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   }
 
   for (uint16_t i = 0; i < kRightJPixels; ++i) {
-    const float ingress = sampleIngress(i, kRightJPixels, track);
+    const float ingress = sampleIngress(i, kRightJPixels, track, profile.rightJIngressReversed);
     const float alpha = ingress > rightJLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
     rightJLuma_[i] = rightJLuma_[i] + ((ingress - rightJLuma_[i]) * alpha);
     const float visibleLuma = rightJLuma_[i] > profile.idleJFloor ? rightJLuma_[i] : profile.idleJFloor;
@@ -197,9 +197,10 @@ void AnthuriumScene::phaseColor(const StableTrack& track, float& r, float& g, fl
   w = color->w;
 }
 
-float AnthuriumScene::sampleIngress(uint16_t pixel, uint16_t count, const StableTrack& track) const {
+float AnthuriumScene::sampleIngress(uint16_t pixel, uint16_t count, const StableTrack& track, bool reverseLogical) const {
   const float denom = (count > 1) ? static_cast<float>(count - 1) : 1.0f;
-  const float position = static_cast<float>(pixel) / denom;
+  const float linearPosition = static_cast<float>(pixel) / denom;
+  const float position = reverseLogical ? (1.0f - linearPosition) : linearPosition;
   const float tipToEntry = 1.0f - position;
 
   float delta = fabsf(tipToEntry - ingressPhase_);
