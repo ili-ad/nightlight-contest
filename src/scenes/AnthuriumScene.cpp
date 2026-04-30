@@ -2,6 +2,10 @@
 
 #include <math.h>
 
+#ifndef ANTHURIUM_RENDER_HEARTBEAT
+#define ANTHURIUM_RENDER_HEARTBEAT 0
+#endif
+
 #include "../config/Profiles.h"
 
 AnthuriumScene::AnthuriumScene(PixelOutput& output) : output_(output) {}
@@ -16,6 +20,8 @@ void AnthuriumScene::begin() {
   approachLevel_ = 0.0f;
   retreatLevel_ = 0.0f;
   motionLevel_ = 0.0f;
+  heartbeatFrame_ = 0;
+  heartbeatLastLogMs_ = 0;
 
   for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     frontField_[i] = 0.0f;
@@ -48,6 +54,10 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   lastNowMs_ = nowMs;
   const float dtSec = static_cast<float>(dtMs) / 1000.0f;
 
+#if ANTHURIUM_RENDER_HEARTBEAT
+  ++heartbeatFrame_;
+#endif
+
   const auto& profile = Profiles::anthurium();
 
   const float travelSec = profile.jConveyorTravelSec > 0.001f ? profile.jConveyorTravelSec : 0.001f;
@@ -67,8 +77,15 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     const float field = clamp01(profile.torusBaseField + frontField_[i]);
     const float visible = field > profile.idleFrontRingFloor ? field : profile.idleFrontRingFloor;
+    float heartbeatBump = 0.0f;
+#if ANTHURIUM_RENDER_HEARTBEAT
+    if (i == 0) {
+      const float pulse = ((heartbeatFrame_ / 12U) % 2U) == 0U ? 0.0f : (1.5f / 255.0f);
+      heartbeatBump = pulse;
+    }
+#endif
     output_.setFrontRingPixel(i, toByte(frontColor_[i].r * visible), toByte(frontColor_[i].g * visible),
-                              toByte(frontColor_[i].b * visible), toByte(frontColor_[i].w * visible));
+                              toByte(frontColor_[i].b * visible), toByte((frontColor_[i].w * visible) + heartbeatBump));
   }
 
   for (uint16_t i = 0; i < kRearRingPixels; ++i) {
@@ -91,6 +108,13 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   }
 
   output_.show();
+
+#if ANTHURIUM_RENDER_HEARTBEAT
+  if ((heartbeatLastLogMs_ == 0U) || ((nowMs - heartbeatLastLogMs_) >= 1000U)) {
+    heartbeatLastLogMs_ = nowMs;
+    Serial.println("[Anthurium] render heartbeat");
+  }
+#endif
 }
 
 void AnthuriumScene::updateJDelayLines(const StableTrack& track, float dtSec, Profiles::RgbwFloat& rightImpulse, Profiles::RgbwFloat& leftImpulse) {

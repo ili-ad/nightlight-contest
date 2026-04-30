@@ -42,6 +42,8 @@ class AnthuriumScene {
   float approachLevel_ = 0.0f;
   float retreatLevel_ = 0.0f;
   float motionLevel_ = 0.0f;
+  uint32_t heartbeatFrame_ = 0;
+  uint32_t heartbeatLastLogMs_ = 0;
 
   static constexpr uint16_t kFrontRingPixels = Profiles::kFrontRingPixels;
   static constexpr uint16_t kRearRingPixels = Profiles::kRearRingPixels;
