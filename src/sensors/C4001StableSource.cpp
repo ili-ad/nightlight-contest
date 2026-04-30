@@ -76,11 +76,23 @@ void C4001StableSource::service(uint32_t nowMs) {
   }
 
   const bool retryElapsed = (lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.initRetryMs);
-  if (!manualInitRequested_ && (!profile.enableC4001AutoInit || !retryElapsed)) {
+  if (!retryElapsed) {
     return;
   }
+
+  const bool manualAttempt = manualInitRequested_;
+  const bool autoAttempt = (!manualAttempt && profile.enableC4001AutoInit);
+  if (!manualAttempt && !autoAttempt) {
+    return;
+  }
+
   manualInitRequested_ = false;
   lastInitAttemptMs_ = nowMs;
+  if (manualAttempt) {
+    Serial.println("event=c4001_init_attempt_manual");
+  } else {
+    Serial.println("event=c4001_init_attempt_auto");
+  }
 
   if (!wireReady_) {
     Wire.begin();

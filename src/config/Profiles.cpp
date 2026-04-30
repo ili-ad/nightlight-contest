@@ -18,7 +18,7 @@ constexpr C4001Profile kC4001Profile = {
     33,     // pollIntervalMs
     420,    // holdMs
     2000,   // initRetryMs
-    false,  // enableC4001AutoInit
+    true,   // enableC4001AutoInit
 
     0.35f,  // rangeNearM
     2.40f,  // rangeFarM
