@@ -11,37 +11,30 @@ DFRobot_C4001_I2C gC4001(&Wire, Profiles::c4001().i2cAddress);
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float span = profile.rangeFarM - profile.rangeNearM;
-  if (span <= 0.001f) {
-    return 0.0f;
-  }
-
+  if (span <= 0.001f) return 0.0f;
   float t = (rangeM - profile.rangeNearM) / span;
-  if (t < 0.0f) {
-    t = 0.0f;
-  }
-  if (t > 1.0f) {
-    t = 1.0f;
-  }
+  if (t < 0.0f) t = 0.0f;
+  if (t > 1.0f) t = 1.0f;
   return t;
 }
 
 float chargeFromRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float nearness = 1.0f - normalizeRange(rangeM, profile);
-  // Gentle near-field lift to preserve close-range elegance without blinking spikes.
   const float curved = nearness + (profile.nearnessLiftGain * nearness * (1.0f - nearness));
   return curved > 1.0f ? 1.0f : curved;
 }
 
-bool i2cDevicePresent(uint8_t address) {
-  Wire.beginTransmission(address);
-  const uint8_t status = Wire.endTransmission();
-  return status == 0;
-}
-
-void configureSensor() {
+bool initC4001() {
+  Serial.println("event=c4001_init_begin");
+  if (!gC4001.begin()) {
+    Serial.println("warn=c4001_init_failed");
+    return false;
+  }
   gC4001.setSensorMode(eSpeedMode);
   gC4001.setDetectThres(11, 1200, 10);
   gC4001.setFrettingDetection(eON);
+  Serial.println("event=c4001_init_recovered");
+  return true;
 }
 }  // namespace
 
@@ -49,12 +42,16 @@ void C4001StableSource::begin() {
   initialized_ = true;
   if (!wireReady_) {
     Wire.begin();
+#if defined(WIRE_HAS_TIMEOUT)
+    Wire.setWireTimeout(25000, true);
+#endif
+    delay(10);
     wireReady_ = true;
   }
-  sensorReady_ = false;
+
+  sensorReady_ = initC4001();
   manualInitRequested_ = false;
   lastPollMs_ = 0;
-  lastInitAttemptMs_ = 0;
   lastSeenMs_ = 0;
   stableHasTarget_ = false;
   stableRangeM_ = 1.2f;
@@ -66,65 +63,25 @@ void C4001StableSource::begin() {
 }
 
 void C4001StableSource::service(uint32_t nowMs) {
-  const auto& profile = Profiles::c4001();
-  if (!initialized_) {
-    begin();
-  }
-
-  if (sensorReady_) {
-    return;
-  }
-
-  const bool retryElapsed = (lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.initRetryMs);
-  if (!retryElapsed) {
-    return;
-  }
-
-  const bool manualAttempt = manualInitRequested_;
-  const bool autoAttempt = (!manualAttempt && profile.enableC4001AutoInit);
-  if (!manualAttempt && !autoAttempt) {
-    return;
-  }
-
+  (void)nowMs;
+  if (!initialized_) begin();
+  if (!manualInitRequested_) return;
   manualInitRequested_ = false;
-  lastInitAttemptMs_ = nowMs;
-  if (manualAttempt) {
-    Serial.println("event=c4001_init_attempt_manual");
-  } else {
-    Serial.println("event=c4001_init_attempt_auto");
-  }
-
-  if (!wireReady_) {
-    Wire.begin();
-    wireReady_ = true;
-  }
-
-  if (!i2cDevicePresent(profile.i2cAddress)) {
-    Serial.println("warn=c4001_init_failed");
-    return;
-  }
-
-  sensorReady_ = gC4001.begin();
-  if (sensorReady_) {
-    configureSensor();
-    Serial.println("event=c4001_init_recovered");
-  } else {
-    Serial.println("warn=c4001_init_failed");
+  const bool wasReady = sensorReady_;
+  sensorReady_ = initC4001();
+  if (sensorReady_ && !wasReady) {
+    Serial.println("event=c4001_read_resume");
   }
 }
 
 void C4001StableSource::requestManualInit() {
-  if (!initialized_) {
-    begin();
-  }
+  if (!initialized_) begin();
   manualInitRequested_ = true;
 }
 
 StableTrack C4001StableSource::read(uint32_t nowMs) {
   const auto& profile = Profiles::c4001();
-  if (!initialized_) {
-    begin();
-  }
+  if (!initialized_) begin();
   if (lastPollMs_ != 0 && (nowMs - lastPollMs_) < profile.pollIntervalMs) {
     StableTrack t;
     t.online = sensorReady_;
@@ -139,59 +96,59 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   }
   lastPollMs_ = nowMs;
 
-  bool rawHasTarget = false;
+  bool accepted = false;
   float rawRangeM = stableRangeM_;
   float rawSpeedMps = 0.0f;
 
   if (sensorReady_) {
     const int targetNumber = gC4001.getTargetNumber();
-    if (targetNumber > 0) {
-      const float sensedRange = gC4001.getTargetRange();
-      const float sensedSpeed = gC4001.getTargetSpeed();
-      if (sensedRange > 0.02f && sensedRange < 8.0f) {
-        rawHasTarget = true;
-        rawRangeM = sensedRange;
-        rawSpeedMps = sensedSpeed;
-      }
+    const float sensedRange = gC4001.getTargetRange();
+    const float sensedSpeed = gC4001.getTargetSpeed();
+    if (targetNumber > 0 && sensedRange >= profile.rangeNearM && sensedRange <= profile.rangeFarM) {
+      accepted = true;
+      rawRangeM = sensedRange;
+      rawSpeedMps = sensedSpeed;
     }
   }
 
-  if (rawHasTarget) {
-    lastSeenMs_ = nowMs;
-    stableHasTarget_ = true;
-
-    const bool approaching = rawRangeM < stableRangeM_;
-    const float rangeAlpha = approaching ? profile.approachRangeAlpha : profile.retreatRangeAlpha;
-    stableRangeM_ = smooth(stableRangeM_, rawRangeM, rangeAlpha);
-    stableSpeedMps_ = smooth(stableSpeedMps_, rawSpeedMps, profile.speedAlpha);
-  } else {
-    if (stableHasTarget_ && (nowMs - lastSeenMs_) > profile.holdMs) {
-      stableHasTarget_ = false;
+  if (accepted) {
+    if (!stableHasTarget_ && lastSeenMs_ != 0) {
+      Serial.println("event=c4001_read_resume");
     }
+    stableHasTarget_ = true;
+    lastSeenMs_ = nowMs;
+    stableRangeM_ = rawRangeM;
+    stableSpeedMps_ = smooth(stableSpeedMps_, rawSpeedMps, profile.speedAlpha);
+    continuity_ = 1.0f;
+  } else if (stableHasTarget_) {
+    const uint32_t ageMs = nowMs - lastSeenMs_;
+    if (ageMs <= profile.holdMs) {
+      continuity_ = 1.0f;
+      stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, profile.speedDecayAlpha);
+    } else if (ageMs >= (profile.holdMs + 1500u)) {
+      stableHasTarget_ = false;
+      continuity_ = 0.0f;
+      stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, profile.speedDecayAlpha);
+    } else {
+      const float t = float(ageMs - profile.holdMs) / 1500.0f;
+      continuity_ = clamp01(1.0f - t);
+      stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, profile.speedDecayAlpha);
+    }
+  } else {
+    continuity_ = 0.0f;
     stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, profile.speedDecayAlpha);
   }
 
-  const float targetCharge = stableHasTarget_ ? chargeFromRange(stableRangeM_, profile) : 0.0f;
-  smoothedCharge_ = smooth(smoothedCharge_, targetCharge,
-                           stableHasTarget_ ? profile.chargeRiseAlpha : profile.chargeFallAlpha);
+  const float targetCharge = stableHasTarget_ ? chargeFromRange(stableRangeM_, profile) * continuity_ : 0.0f;
+  smoothedCharge_ = smooth(smoothedCharge_, targetCharge, stableHasTarget_ ? profile.chargeRiseAlpha : profile.chargeFallAlpha);
+  const float motion = clamp01(fabsf(stableSpeedMps_) / 0.35f);
+  const float ingressTarget = clamp01((motion * 0.78f) + (smoothedCharge_ * 0.26f));
+  smoothedIngress_ = smooth(smoothedIngress_, ingressTarget, stableHasTarget_ ? profile.ingressRiseAlpha : profile.ingressFallAlpha);
 
-  const float ingressTarget = stableHasTarget_ ? (profile.ingressBase + (profile.ingressGain * smoothedCharge_)) : 0.0f;
-  smoothedIngress_ = smooth(smoothedIngress_, ingressTarget,
-                            stableHasTarget_ ? profile.ingressRiseAlpha : profile.ingressFallAlpha);
-
-  const float continuityTarget = stableHasTarget_ ? 1.0f : 0.0f;
-  continuity_ = smooth(continuity_, continuityTarget,
-                       stableHasTarget_ ? profile.continuityRiseAlpha : profile.continuityFallAlpha);
-
-  if (!stableHasTarget_) {
-    phase_ = StableTrack::MotionPhase::None;
-  } else if (fabsf(stableSpeedMps_) <= profile.stillSpeedMps) {
-    phase_ = StableTrack::MotionPhase::Still;
-  } else if (stableSpeedMps_ < 0.0f) {
-    phase_ = StableTrack::MotionPhase::Approach;
-  } else {
-    phase_ = StableTrack::MotionPhase::Retreat;
-  }
+  if (!stableHasTarget_ || continuity_ <= 0.001f) phase_ = StableTrack::MotionPhase::None;
+  else if (fabsf(stableSpeedMps_) <= profile.stillSpeedMps) phase_ = StableTrack::MotionPhase::Still;
+  else if (stableSpeedMps_ < 0.0f) phase_ = StableTrack::MotionPhase::Approach;
+  else phase_ = StableTrack::MotionPhase::Retreat;
 
   StableTrack t;
   t.online = sensorReady_;
@@ -206,12 +163,8 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
 }
 
 float C4001StableSource::clamp01(float v) {
-  if (v < 0.0f) {
-    return 0.0f;
-  }
-  if (v > 1.0f) {
-    return 1.0f;
-  }
+  if (v < 0.0f) return 0.0f;
+  if (v > 1.0f) return 1.0f;
   return v;
 }
 
