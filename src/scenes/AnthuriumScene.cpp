@@ -4,7 +4,6 @@
 
 #include "../config/Profiles.h"
 
-
 AnthuriumScene::AnthuriumScene(PixelOutput& output) : output_(output) {}
 
 void AnthuriumScene::begin() {
@@ -12,13 +11,18 @@ void AnthuriumScene::begin() {
   lastNowMs_ = 0;
   ingressPhase_ = 0.0f;
 
-  for (uint16_t i = 0; i < kRingPixels; ++i) {
-    torus_[i] = 0.0f;
-    ringLuma_[i] = 0.0f;
+  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
+    frontField_[i] = 0.0f;
+    frontLuma_[i] = 0.0f;
   }
-  for (uint16_t i = 0; i < kStamenPixels; ++i) {
-    leftLuma_[i] = 0.0f;
-    rightLuma_[i] = 0.0f;
+  for (uint16_t i = 0; i < kRearRingPixels; ++i) {
+    rearLuma_[i] = 0.0f;
+  }
+  for (uint16_t i = 0; i < kLeftJPixels; ++i) {
+    leftJLuma_[i] = 0.0f;
+  }
+  for (uint16_t i = 0; i < kRightJPixels; ++i) {
+    rightJLuma_[i] = 0.0f;
   }
 }
 
@@ -55,41 +59,69 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   float w = 0.0f;
   phaseColor(track, r, g, b, w);
 
-  for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
-    const float field = clamp01(profile.torusBaseField + torus_[i]);
+  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
+    const float field = clamp01(profile.torusBaseField + frontField_[i]);
     const float target = clamp01((field * track.continuity) + (track.charge * profile.torusInstantGain));
-    const float alpha = target > ringLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
-    ringLuma_[i] = ringLuma_[i] + ((target - ringLuma_[i]) * alpha);
+    const float alpha = target > frontLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
+    frontLuma_[i] = frontLuma_[i] + ((target - frontLuma_[i]) * alpha);
 
-    output_.setRingPixel(i,
-                         toByte(r * ringLuma_[i]),
-                         toByte(g * ringLuma_[i]),
-                         toByte(b * ringLuma_[i]),
-                         toByte(w * field));
+    output_.setFrontRingPixel(i,
+                              toByte(r * frontLuma_[i]),
+                              toByte(g * frontLuma_[i]),
+                              toByte(b * frontLuma_[i]),
+                              toByte(w * field));
   }
 
-  for (uint16_t i = 0; i < Profiles::kLeftStamenPixels; ++i) {
-    const float ingress = sampleIngress(i, Profiles::kLeftStamenPixels, track);
-    const float alpha = ingress > leftLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
-    leftLuma_[i] = leftLuma_[i] + ((ingress - leftLuma_[i]) * alpha);
+  for (uint16_t i = 0; i < kRearRingPixels; ++i) {
+    uint16_t source = i;
+    if (profile.rearRingMirror) {
+      source = kRearRingPixels - 1 - i;
+    }
 
-    output_.setLeftStamenPixel(i,
-                               toByte(r * leftLuma_[i]),
-                               toByte(g * leftLuma_[i]),
-                               toByte(b * leftLuma_[i]),
-                               toByte(w * ingress));
+    float phasePosition = static_cast<float>(source) + (profile.rearRingPhaseOffset * kRearRingPixels);
+    while (phasePosition >= kRearRingPixels) {
+      phasePosition -= kRearRingPixels;
+    }
+
+    const uint16_t base = static_cast<uint16_t>(phasePosition);
+    const uint16_t next = (base + 1) % kRearRingPixels;
+    const float mix = phasePosition - static_cast<float>(base);
+    const float rearField = ((frontField_[base] * (1.0f - mix)) + (frontField_[next] * mix)) * profile.rearRingScale;
+
+    const float field = clamp01(profile.torusBaseField + rearField);
+    const float target = clamp01((field * track.continuity) + (track.charge * profile.torusInstantGain * profile.rearRingScale));
+    const float alpha = target > rearLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
+    rearLuma_[i] = rearLuma_[i] + ((target - rearLuma_[i]) * alpha);
+
+    output_.setRearRingPixel(i,
+                             toByte(r * rearLuma_[i]),
+                             toByte(g * rearLuma_[i]),
+                             toByte(b * rearLuma_[i]),
+                             toByte(w * field));
   }
 
-  for (uint16_t i = 0; i < Profiles::kRightStamenPixels; ++i) {
-    const float ingress = sampleIngress(i, Profiles::kRightStamenPixels, track);
-    const float alpha = ingress > rightLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
-    rightLuma_[i] = rightLuma_[i] + ((ingress - rightLuma_[i]) * alpha);
+  for (uint16_t i = 0; i < kLeftJPixels; ++i) {
+    const float ingress = sampleIngress(i, kLeftJPixels, track);
+    const float alpha = ingress > leftJLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
+    leftJLuma_[i] = leftJLuma_[i] + ((ingress - leftJLuma_[i]) * alpha);
 
-    output_.setRightStamenPixel(i,
-                                toByte(r * rightLuma_[i]),
-                                toByte(g * rightLuma_[i]),
-                                toByte(b * rightLuma_[i]),
-                                toByte(w * ingress));
+    output_.setLeftJPixel(i,
+                          toByte(r * leftJLuma_[i]),
+                          toByte(g * leftJLuma_[i]),
+                          toByte(b * leftJLuma_[i]),
+                          toByte(w * ingress));
+  }
+
+  for (uint16_t i = 0; i < kRightJPixels; ++i) {
+    const float ingress = sampleIngress(i, kRightJPixels, track);
+    const float alpha = ingress > rightJLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
+    rightJLuma_[i] = rightJLuma_[i] + ((ingress - rightJLuma_[i]) * alpha);
+
+    output_.setRightJPixel(i,
+                           toByte(r * rightJLuma_[i]),
+                           toByte(g * rightJLuma_[i]),
+                           toByte(b * rightJLuma_[i]),
+                           toByte(w * ingress));
   }
 
   output_.show();
@@ -98,38 +130,38 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
 void AnthuriumScene::updateTorus(const StableTrack& track, float dtSec) {
   const auto& profile = Profiles::anthurium();
 
-  float tmp[kRingPixels] = {0.0f};
+  float tmp[kFrontRingPixels] = {0.0f};
   const float decay = expf(-profile.torusDecayPerSecond * dtSec);
   const float diffusion = profile.torusDiffusionPerSecond * dtSec;
 
-  for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
-    const uint16_t left = (i == 0) ? (Profiles::kRingPixels - 1) : (i - 1);
-    const uint16_t right = (i + 1) % Profiles::kRingPixels;
+  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
+    const uint16_t left = (i == 0) ? (kFrontRingPixels - 1) : (i - 1);
+    const uint16_t right = (i + 1) % kFrontRingPixels;
 
-    float v = torus_[i];
-    v += (torus_[left] + torus_[right] - (2.0f * torus_[i])) * diffusion;
+    float v = frontField_[i];
+    v += (frontField_[left] + frontField_[right] - (2.0f * frontField_[i])) * diffusion;
     v *= decay;
     tmp[i] = clamp01(v);
   }
 
   const float input = track.charge * track.continuity * profile.torusAccumulationGain * dtSec;
 
-  for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
+  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     float da = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(profile.ingressA)));
     float db = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(profile.ingressB)));
-    if (da > (Profiles::kRingPixels * 0.5f)) {
-      da = Profiles::kRingPixels - da;
+    if (da > (kFrontRingPixels * 0.5f)) {
+      da = kFrontRingPixels - da;
     }
-    if (db > (Profiles::kRingPixels * 0.5f)) {
-      db = Profiles::kRingPixels - db;
+    if (db > (kFrontRingPixels * 0.5f)) {
+      db = kFrontRingPixels - db;
     }
 
     tmp[i] = clamp01(tmp[i] + (input * (polynomialKernel(da, profile.ingressSpread) +
                                         polynomialKernel(db, profile.ingressSpread))));
   }
 
-  for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
-    torus_[i] = tmp[i];
+  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
+    frontField_[i] = tmp[i];
   }
 }
 

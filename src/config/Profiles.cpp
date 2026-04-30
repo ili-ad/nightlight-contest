@@ -55,6 +55,10 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     0.24f,  // lumaRiseAlpha
     0.14f,  // lumaFallAlpha
 
+    0.65f,  // rearRingScale
+    0.50f,  // rearRingPhaseOffset
+    true,   // rearRingMirror
+
     {1.00f, 0.28f, 0.08f, 0.20f},  // approachColor
     {0.95f, 0.62f, 0.20f, 0.34f},  // stillColor
     {0.72f, 0.26f, 0.45f, 0.12f},  // retreatColor

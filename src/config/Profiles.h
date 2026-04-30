@@ -80,6 +80,10 @@ struct AnthuriumProfile {
   float lumaRiseAlpha;
   float lumaFallAlpha;
 
+  float rearRingScale;
+  float rearRingPhaseOffset;
+  bool rearRingMirror;
+
   RgbwFloat approachColor;
   RgbwFloat stillColor;
   RgbwFloat retreatColor;
