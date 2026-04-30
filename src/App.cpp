@@ -20,12 +20,11 @@ App::App(LayoutMap& layoutMap, PixelOutput& pixelOutput)
 void App::setup() {
   (void)layoutMap_;
   Serial.begin(115200);
-  Serial.println("Nightlight v2 ARCH-064 ambient override boot");
+  Serial.println("Nightlight v2 production boot");
 
   pixelOutput_.begin();
   stableSource_.begin();
   clapDetector_.begin();
-  ambientLux_.begin();
   anthuriumScene_.begin();
   nightlightScene_.begin();
 
@@ -42,10 +41,8 @@ void App::loop() {
   }
 
   const Mode userMode = modeController_.currentMode();
-  const AmbientLux::Band ambientBand = ambientLux_.readBand(nowMs);
-  const Mode effectiveMode = resolveEffectiveMode(userMode, ambientBand);
 
-  switch (effectiveMode) {
+  switch (userMode) {
     case Mode::Off:
       renderOff();
       break;
@@ -76,25 +73,6 @@ const char* App::modeName(Mode mode) {
     default:
       return "Unknown";
   }
-}
-
-Mode App::resolveEffectiveMode(Mode userMode, AmbientLux::Band ambientBand) {
-  // ARCH-064 ambient policy:
-  // Off -> Off, Nightlight -> Nightlight,
-  // Anthurium + Dark -> Nightlight, else user-selected mode.
-  if (userMode == Mode::Off) {
-    return Mode::Off;
-  }
-
-  if (userMode == Mode::Nightlight) {
-    return Mode::Nightlight;
-  }
-
-  if (userMode == Mode::Anthurium && ambientBand == AmbientLux::Band::Dark) {
-    return Mode::Nightlight;
-  }
-
-  return userMode;
 }
 
 void App::renderOff() {
