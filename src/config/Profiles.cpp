@@ -82,6 +82,11 @@ constexpr NightlightProfile kNightlightProfile = {
     7,        // baseG
     1,        // baseB
     4,        // baseW
+
+    0.85f,    // jScale
+    1.00f,    // frontRingScale
+    0.65f,    // rearRingScale
+
     0.02f,    // breatheAmplitude
     14000.0f  // breathePeriodMs
 };
