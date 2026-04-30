@@ -49,6 +49,7 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     1.85f,  // torusAccumulationGain
     0.55f,  // torusInstantGain
     0.02f,  // torusBaseField
+    3.00f,  // ringColorMemorySec
 
     7,      // ingressA
     29,     // ingressB

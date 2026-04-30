@@ -76,6 +76,7 @@ struct AnthuriumProfile {
   float torusAccumulationGain;
   float torusInstantGain;
   float torusBaseField;
+  float ringColorMemorySec;
 
   uint16_t ingressA;
   uint16_t ingressB;
