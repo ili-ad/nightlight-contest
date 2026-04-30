@@ -19,9 +19,10 @@ class LayoutMap {
 
   LayoutMap();
 
-  uint16_t ringToPhysical(uint16_t logicalPixel) const;
-  uint16_t leftStamenToPhysical(uint16_t logicalPixel) const;
-  uint16_t rightStamenToPhysical(uint16_t logicalPixel) const;
+  uint16_t rightJToPhysical(uint16_t logicalPixel) const;
+  uint16_t leftJToPhysical(uint16_t logicalPixel) const;
+  uint16_t frontRingToPhysical(uint16_t logicalPixel) const;
+  uint16_t rearRingToPhysical(uint16_t logicalPixel) const;
   uint16_t totalPhysicalPixels() const;
 
  private:

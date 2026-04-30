@@ -4,15 +4,19 @@
 
 namespace Profiles {
 
-// ARCH-061 scaffold assumptions copied from the proven v1 hardware profile.
-constexpr uint16_t kRingPixels = 45;
-constexpr uint16_t kLeftStamenPixels = 16;
-constexpr uint16_t kRightStamenPixels = 16;
+// Final installed topology (physical chain order):
+// RightJ (J1) 12 + LeftJ (J2) 12 + FrontRing (O1) 44 + RearRing (O2) 44.
+constexpr uint16_t kRightJPixels = 12;
+constexpr uint16_t kLeftJPixels = 12;
+constexpr uint16_t kFrontRingPixels = 44;
+constexpr uint16_t kRearRingPixels = 44;
+constexpr uint16_t kPhysicalPixels = 112;
 
 enum class SpanRole : uint8_t {
-  Ring,
-  LeftStamen,
-  RightStamen,
+  RightJ,
+  LeftJ,
+  FrontRing,
+  RearRing,
 };
 
 struct SpanProfile {
@@ -21,7 +25,7 @@ struct SpanProfile {
   bool reversed;
 };
 
-constexpr uint8_t kTopologySpanCount = 3;
+constexpr uint8_t kTopologySpanCount = 4;
 
 struct TopologyProfile {
   SpanProfile spans[kTopologySpanCount];
