@@ -36,9 +36,9 @@ void App::loop() {
   if (phase_ == AppPhase::Startup) {
     if (startupScene_.render(nowMs)) {
       clapDetector_.begin();
-      stableSource_.begin();
       modeController_.setMode(Mode::Anthurium);
       phase_ = AppPhase::Running;
+      Serial.println("event=startup_complete mode=Anthurium");
     }
     delay(16);
     return;

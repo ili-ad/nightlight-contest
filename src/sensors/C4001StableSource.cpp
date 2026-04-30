@@ -31,21 +31,23 @@ float chargeFromRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float curved = nearness + (profile.nearnessLiftGain * nearness * (1.0f - nearness));
   return curved > 1.0f ? 1.0f : curved;
 }
+
+bool i2cDevicePresent(uint8_t address) {
+  Wire.beginTransmission(address);
+  const uint8_t status = Wire.endTransmission();
+  return status == 0;
+}
 }  // namespace
 
 void C4001StableSource::begin() {
   initialized_ = true;
-  Wire.begin();
-  sensorReady_ = gC4001.begin();
-  if (sensorReady_) {
-    gC4001.setSensorMode(eSpeedMode);
-    gC4001.setDetectThres(11, 1200, 10);
-    gC4001.setFrettingDetection(eON);
-  } else {
-    Serial.println("warn=c4001_init_failed");
+  if (!wireReady_) {
+    Wire.begin();
+    wireReady_ = true;
   }
-
+  sensorReady_ = false;
   lastPollMs_ = 0;
+  lastInitAttemptMs_ = 0;
   lastSeenMs_ = 0;
   stableHasTarget_ = false;
   stableRangeM_ = 1.2f;
@@ -60,17 +62,28 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   const auto& profile = Profiles::c4001();
   if (!initialized_) {
     begin();
-  } else if (!sensorReady_ &&
-             (lastPollMs_ == 0 || (nowMs - lastPollMs_) >= profile.initRetryMs)) {
-    sensorReady_ = gC4001.begin();
-    if (sensorReady_) {
-      gC4001.setSensorMode(eSpeedMode);
-      gC4001.setDetectThres(11, 1200, 10);
-      gC4001.setFrettingDetection(eON);
-      Serial.println("event=c4001_init_recovered");
-    }
   }
 
+  if (!sensorReady_ &&
+      (lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.initRetryMs)) {
+    lastInitAttemptMs_ = nowMs;
+    if (!wireReady_) {
+      Wire.begin();
+      wireReady_ = true;
+    }
+
+    if (i2cDevicePresent(profile.i2cAddress)) {
+      sensorReady_ = gC4001.begin();
+      if (sensorReady_) {
+        gC4001.setSensorMode(eSpeedMode);
+        gC4001.setDetectThres(11, 1200, 10);
+        gC4001.setFrettingDetection(eON);
+        Serial.println("event=c4001_init_recovered");
+      } else {
+        Serial.println("warn=c4001_init_failed");
+      }
+    }
+  }
 
   if (lastPollMs_ != 0 && (nowMs - lastPollMs_) < profile.pollIntervalMs) {
     StableTrack t;
