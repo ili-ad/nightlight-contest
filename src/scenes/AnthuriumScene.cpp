@@ -64,21 +64,43 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   updateFrontRingField(dtSec, rightImpulse, leftImpulse);
   updateRearRingField(dtSec);
 
+  const bool idleOnly = !track.online || !track.hasTarget;
+  const float idleMix = idleOnly ? 1.0f : 0.24f;
+  const auto& idle = profile.idleColor;
+
   for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     const float visible = clamp01(0.10f + frontField_[i]);
-    output_.setFrontRingPixel(i, toByte(frontColor_[i].r * visible), toByte(frontColor_[i].g * visible),
-                              toByte(frontColor_[i].b * visible), toByte(frontColor_[i].w * visible));
+    const float idleFloor = profile.idleFrontRingFloor * idleMix;
+    const float r = clamp01((frontColor_[i].r * visible) + (idle.r * idleFloor));
+    const float g = clamp01((frontColor_[i].g * visible) + (idle.g * idleFloor));
+    const float b = clamp01((frontColor_[i].b * visible) + (idle.b * idleFloor));
+    const float w = clamp01((frontColor_[i].w * visible) + (idle.w * idleFloor));
+    output_.setFrontRingPixel(i, toByte(r), toByte(g), toByte(b), toByte(w));
   }
   for (uint16_t i = 0; i < kRearRingPixels; ++i) {
     const float visible = clamp01(0.08f + (rearLuma_[i] * 0.7f));
-    output_.setRearRingPixel(i, toByte(rearColor_[i].r * visible), toByte(rearColor_[i].g * visible),
-                             toByte(rearColor_[i].b * visible), toByte(rearColor_[i].w * visible));
+    const float idleFloor = profile.idleRearRingFloor * idleMix;
+    const float r = clamp01((rearColor_[i].r * visible) + (idle.r * idleFloor));
+    const float g = clamp01((rearColor_[i].g * visible) + (idle.g * idleFloor));
+    const float b = clamp01((rearColor_[i].b * visible) + (idle.b * idleFloor));
+    const float w = clamp01((rearColor_[i].w * visible) + (idle.w * idleFloor));
+    output_.setRearRingPixel(i, toByte(r), toByte(g), toByte(b), toByte(w));
   }
   for (uint16_t i = 0; i < kLeftJPixels; ++i) {
-    output_.setLeftJPixel(i, toByte(leftJColor_[i].r), toByte(leftJColor_[i].g), toByte(leftJColor_[i].b), toByte(leftJColor_[i].w));
+    const float idleFloor = profile.idleJFloor * idleMix;
+    const float r = clamp01(leftJColor_[i].r + (idle.r * idleFloor));
+    const float g = clamp01(leftJColor_[i].g + (idle.g * idleFloor));
+    const float b = clamp01(leftJColor_[i].b + (idle.b * idleFloor));
+    const float w = clamp01(leftJColor_[i].w + (idle.w * idleFloor));
+    output_.setLeftJPixel(i, toByte(r), toByte(g), toByte(b), toByte(w));
   }
   for (uint16_t i = 0; i < kRightJPixels; ++i) {
-    output_.setRightJPixel(i, toByte(rightJColor_[i].r), toByte(rightJColor_[i].g), toByte(rightJColor_[i].b), toByte(rightJColor_[i].w));
+    const float idleFloor = profile.idleJFloor * idleMix;
+    const float r = clamp01(rightJColor_[i].r + (idle.r * idleFloor));
+    const float g = clamp01(rightJColor_[i].g + (idle.g * idleFloor));
+    const float b = clamp01(rightJColor_[i].b + (idle.b * idleFloor));
+    const float w = clamp01(rightJColor_[i].w + (idle.w * idleFloor));
+    output_.setRightJPixel(i, toByte(r), toByte(g), toByte(b), toByte(w));
   }
   output_.show();
 }
