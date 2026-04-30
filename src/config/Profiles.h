@@ -67,16 +67,20 @@ struct RgbwFloat {
 };
 
 struct AnthuriumProfile {
-  float ingressTravelSec;
-  float ingressWidth;
-  float ingressFloor;
+  float jConveyorTravelSec;
+  float jColorMemorySec;
+  float jAdvectionStrength;
+  float jDiffusionStrength;
+  float jTipInjectionGain;
+  float jBaseGlow;
 
-  float torusDecayPerSecond;
-  float torusDiffusionPerSecond;
-  float torusAccumulationGain;
-  float torusInstantGain;
+  float frontRingColorMemorySec;
+  float frontRingDiffusion;
+  float frontRingImpulseGain;
+  uint8_t frontRingBlurPasses;
+  float rearRingWashScale;
+  float rearRingMemorySec;
   float torusBaseField;
-  float ringColorMemorySec;
   float speedDeadbandMps;
   float speedFullScaleMps;
   float approachRiseAlpha;
@@ -86,21 +90,12 @@ struct AnthuriumProfile {
   float motionRiseAlpha;
   float motionFallAlpha;
 
-  uint16_t ingressA;
-  uint16_t ingressB;
-  float ingressSpread;
-
   float lumaRiseAlpha;
   float lumaFallAlpha;
 
-  float rearRingScale;
-  float rearRingPhaseOffset;
-  bool rearRingMirror;
   float idleFrontRingFloor;
   float idleRearRingFloor;
   float idleJFloor;
-  bool rightJIngressReversed;
-  bool leftJIngressReversed;
 
   RgbwFloat approachColor;
   RgbwFloat retreatColor;

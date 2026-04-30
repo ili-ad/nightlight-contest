@@ -40,16 +40,20 @@ constexpr C4001Profile kC4001Profile = {
 };
 
 constexpr AnthuriumProfile kAnthuriumProfile = {
-    1.45f,  // ingressTravelSec
-    0.18f,  // ingressWidth
-    0.08f,  // ingressFloor
+    1.55f,  // jConveyorTravelSec
+    2.20f,  // jColorMemorySec
+    0.55f,  // jAdvectionStrength
+    0.22f,  // jDiffusionStrength
+    1.10f,  // jTipInjectionGain
+    0.10f,  // jBaseGlow
 
-    0.65f,  // torusDecayPerSecond
-    0.35f,  // torusDiffusionPerSecond
-    1.85f,  // torusAccumulationGain
-    0.55f,  // torusInstantGain
+    3.20f,  // frontRingColorMemorySec
+    0.40f,  // frontRingDiffusion
+    1.20f,  // frontRingImpulseGain
+    2,      // frontRingBlurPasses
+    0.58f,  // rearRingWashScale
+    5.40f,  // rearRingMemorySec
     0.02f,  // torusBaseField
-    3.00f,  // ringColorMemorySec
     0.05f,  // speedDeadbandMps
     0.80f,  // speedFullScaleMps
     0.34f,  // approachRiseAlpha
@@ -59,21 +63,12 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     0.26f,  // motionRiseAlpha
     0.08f,  // motionFallAlpha
 
-    7,      // ingressA
-    29,     // ingressB
-    3.4f,   // ingressSpread
-
     0.24f,  // lumaRiseAlpha
     0.14f,  // lumaFallAlpha
 
-    0.65f,  // rearRingScale
-    0.50f,  // rearRingPhaseOffset
-    true,   // rearRingMirror
     0.18f,  // idleFrontRingFloor
     0.14f,  // idleRearRingFloor
     0.16f,  // idleJFloor
-    false,  // rightJIngressReversed
-    true,   // leftJIngressReversed
 
     {1.00f, 0.28f, 0.08f, 0.20f},  // approachColor
     {0.22f, 0.45f, 1.00f, 0.18f},  // retreatColor
