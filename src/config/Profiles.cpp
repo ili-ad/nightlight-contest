@@ -61,6 +61,12 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     {0.55f, 0.22f, 0.10f, 0.05f},  // idleColor
 };
 
+
+constexpr OutputProfile kOutputProfile = {
+    0.18f,  // globalScale
+    80,     // maxChannel
+};
+
 constexpr NightlightProfile kNightlightProfile = {
     18,       // baseR
     7,        // baseG
@@ -75,6 +81,7 @@ constexpr ProductProfile kProductProfile = {
     kC4001Profile,
     kAnthuriumProfile,
     kNightlightProfile,
+    kOutputProfile,
 };
 }  // namespace
 
@@ -92,6 +99,10 @@ const AnthuriumProfile& anthurium() {
 
 const NightlightProfile& nightlight() {
   return kProductProfile.nightlight;
+}
+
+const OutputProfile& output() {
+  return kProductProfile.output;
 }
 
 const ProductProfile& product() {

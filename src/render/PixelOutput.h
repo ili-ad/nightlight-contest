@@ -20,6 +20,7 @@ class PixelOutput {
   void show();
 
  private:
+  uint8_t limitChannel(uint8_t value) const;
   bool setMappedPixel(uint16_t physicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w);
 
   const LayoutMap& layoutMap_;

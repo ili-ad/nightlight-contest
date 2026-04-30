@@ -1,6 +1,7 @@
 #include "PixelOutput.h"
 
 #include "../config/Pins.h"
+#include "../config/Profiles.h"
 
 PixelOutput::PixelOutput(const LayoutMap& layoutMap)
     : layoutMap_(layoutMap),
@@ -36,11 +37,24 @@ void PixelOutput::show() {
   strip_.show();
 }
 
+uint8_t PixelOutput::limitChannel(uint8_t value) const {
+  const auto& profile = Profiles::output();
+  float scaled = static_cast<float>(value) * profile.globalScale;
+  if (scaled > static_cast<float>(profile.maxChannel)) {
+    scaled = static_cast<float>(profile.maxChannel);
+  }
+  if (scaled < 0.0f) {
+    scaled = 0.0f;
+  }
+  return static_cast<uint8_t>(scaled);
+}
+
 bool PixelOutput::setMappedPixel(uint16_t physicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
   if (physicalPixel == LayoutMap::kInvalidPixel) {
     return false;
   }
 
-  strip_.setPixelColor(physicalPixel, strip_.Color(r, g, b, w));
+  strip_.setPixelColor(physicalPixel,
+                      strip_.Color(limitChannel(r), limitChannel(g), limitChannel(b), limitChannel(w)));
   return true;
 }

@@ -86,6 +86,11 @@ struct AnthuriumProfile {
   RgbwFloat idleColor;
 };
 
+struct OutputProfile {
+  float globalScale;
+  uint8_t maxChannel;
+};
+
 struct NightlightProfile {
   uint8_t baseR;
   uint8_t baseG;
@@ -101,12 +106,14 @@ struct ProductProfile {
   C4001Profile c4001;
   AnthuriumProfile anthurium;
   NightlightProfile nightlight;
+  OutputProfile output;
 };
 
 const TopologyProfile& topology();
 const C4001Profile& c4001();
 const AnthuriumProfile& anthurium();
 const NightlightProfile& nightlight();
+const OutputProfile& output();
 const ProductProfile& product();
 
 }  // namespace Profiles
