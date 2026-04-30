@@ -27,11 +27,14 @@ class AnthuriumScene {
   uint32_t lastNowMs_ = 0;
   float ingressPhase_ = 0.0f;
 
-  static constexpr uint16_t kRingPixels = Profiles::kRingPixels;
-  static constexpr uint16_t kStamenPixels = Profiles::kLeftStamenPixels;
+  static constexpr uint16_t kFrontRingPixels = Profiles::kFrontRingPixels;
+  static constexpr uint16_t kRearRingPixels = Profiles::kRearRingPixels;
+  static constexpr uint16_t kRightJPixels = Profiles::kRightJPixels;
+  static constexpr uint16_t kLeftJPixels = Profiles::kLeftJPixels;
 
-  float torus_[kRingPixels] = {0.0f};
-  float ringLuma_[kRingPixels] = {0.0f};
-  float leftLuma_[kStamenPixels] = {0.0f};
-  float rightLuma_[kStamenPixels] = {0.0f};
+  float frontField_[kFrontRingPixels] = {0.0f};
+  float frontLuma_[kFrontRingPixels] = {0.0f};
+  float rearLuma_[kRearRingPixels] = {0.0f};
+  float leftJLuma_[kLeftJPixels] = {0.0f};
+  float rightJLuma_[kRightJPixels] = {0.0f};
 };
