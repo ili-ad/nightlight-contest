@@ -123,15 +123,24 @@ void AnthuriumScene::updateJDelayLines(const StableTrack& track, float dtSec, Pr
   const float fade = expf(-dtSec / (profile.jColorMemorySec > 0.001f ? profile.jColorMemorySec : 0.001f));
   const float adv = clamp01((dtSec / (profile.jConveyorTravelSec > 0.001f ? profile.jConveyorTravelSec : 0.001f)) * profile.jAdvectionStrength * kLeftJPixels);
   const float diff = clamp01(profile.jDiffusionStrength * dtSec);
-  auto stepLine=[&](RgbwField* line, uint16_t n, Profiles::RgbwFloat& impulse){
+  auto stepLine=[&](RgbwField* line, uint16_t n, bool ingressReversed, Profiles::RgbwFloat& impulse){
     RgbwField tmp[kLeftJPixels];
-    for(uint16_t i=0;i<n;++i){ uint16_t prev=i==0?0:i-1; tmp[i]=line[i]; tmp[i].r=clamp01((line[i].r*(1-adv))+(line[prev].r*adv)); tmp[i].g=clamp01((line[i].g*(1-adv))+(line[prev].g*adv)); tmp[i].b=clamp01((line[i].b*(1-adv))+(line[prev].b*adv)); tmp[i].w=clamp01((line[i].w*(1-adv))+(line[prev].w*adv));}
+    const uint16_t ingressIndex = ingressReversed ? (n - 1) : 0;
+    const uint16_t egressIndex = ingressReversed ? 0 : (n - 1);
+    for(uint16_t i=0;i<n;++i){
+      const uint16_t advectNeighbor = ingressReversed ? (i + 1 < n ? i + 1 : (n - 1)) : (i == 0 ? 0 : i - 1);
+      tmp[i]=line[i];
+      tmp[i].r=clamp01((line[i].r*(1-adv))+(line[advectNeighbor].r*adv));
+      tmp[i].g=clamp01((line[i].g*(1-adv))+(line[advectNeighbor].g*adv));
+      tmp[i].b=clamp01((line[i].b*(1-adv))+(line[advectNeighbor].b*adv));
+      tmp[i].w=clamp01((line[i].w*(1-adv))+(line[advectNeighbor].w*adv));
+    }
     for(uint16_t i=0;i<n;++i){ uint16_t l=i==0?0:i-1,r=i+1<n?i+1:n-1; line[i].r=clamp01((tmp[i].r*(1-diff))+(((tmp[l].r+tmp[r].r)*0.5f)*diff)); line[i].g=clamp01((tmp[i].g*(1-diff))+(((tmp[l].g+tmp[r].g)*0.5f)*diff)); line[i].b=clamp01((tmp[i].b*(1-diff))+(((tmp[l].b+tmp[r].b)*0.5f)*diff)); line[i].w=clamp01((tmp[i].w*(1-diff))+(((tmp[l].w+tmp[r].w)*0.5f)*diff)); fadeColor(line[i],fade);}
-    addColor(line[0], color, track.ingressLevel * profile.jTipInjectionGain);
-    impulse = {line[n-1].r, line[n-1].g, line[n-1].b, line[n-1].w};
+    addColor(line[ingressIndex], color, track.ingressLevel * profile.jTipInjectionGain);
+    impulse = {line[egressIndex].r, line[egressIndex].g, line[egressIndex].b, line[egressIndex].w};
   };
-  stepLine(rightJColor_, kRightJPixels, rightImpulse);
-  stepLine(leftJColor_, kLeftJPixels, leftImpulse);
+  stepLine(rightJColor_, kRightJPixels, profile.rightJIngressReversed, rightImpulse);
+  stepLine(leftJColor_, kLeftJPixels, profile.leftJIngressReversed, leftImpulse);
 }
 
 void AnthuriumScene::updateContinuousSignal(const StableTrack& track) {

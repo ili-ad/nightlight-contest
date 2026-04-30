@@ -71,6 +71,8 @@ struct AnthuriumProfile {
   float jColorMemorySec;
   float jAdvectionStrength;
   float jDiffusionStrength;
+  bool rightJIngressReversed;
+  bool leftJIngressReversed;
   float jTipInjectionGain;
   float jBaseGlow;
 
