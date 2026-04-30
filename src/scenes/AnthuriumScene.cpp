@@ -64,11 +64,12 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
     const float target = clamp01((field * track.continuity) + (track.charge * profile.torusInstantGain));
     const float alpha = target > frontLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
     frontLuma_[i] = frontLuma_[i] + ((target - frontLuma_[i]) * alpha);
+    const float visibleLuma = frontLuma_[i] > profile.idleFrontRingFloor ? frontLuma_[i] : profile.idleFrontRingFloor;
 
     output_.setFrontRingPixel(i,
-                              toByte(r * frontLuma_[i]),
-                              toByte(g * frontLuma_[i]),
-                              toByte(b * frontLuma_[i]),
+                              toByte(r * visibleLuma),
+                              toByte(g * visibleLuma),
+                              toByte(b * visibleLuma),
                               toByte(w * field));
   }
 
@@ -92,11 +93,12 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
     const float target = clamp01((field * track.continuity) + (track.charge * profile.torusInstantGain * profile.rearRingScale));
     const float alpha = target > rearLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
     rearLuma_[i] = rearLuma_[i] + ((target - rearLuma_[i]) * alpha);
+    const float visibleLuma = rearLuma_[i] > profile.idleRearRingFloor ? rearLuma_[i] : profile.idleRearRingFloor;
 
     output_.setRearRingPixel(i,
-                             toByte(r * rearLuma_[i]),
-                             toByte(g * rearLuma_[i]),
-                             toByte(b * rearLuma_[i]),
+                             toByte(r * visibleLuma),
+                             toByte(g * visibleLuma),
+                             toByte(b * visibleLuma),
                              toByte(w * field));
   }
 
@@ -104,24 +106,28 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
     const float ingress = sampleIngress(i, kLeftJPixels, track);
     const float alpha = ingress > leftJLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
     leftJLuma_[i] = leftJLuma_[i] + ((ingress - leftJLuma_[i]) * alpha);
+    const float visibleLuma = leftJLuma_[i] > profile.idleJFloor ? leftJLuma_[i] : profile.idleJFloor;
+    const float visibleIngress = ingress > profile.idleJFloor ? ingress : profile.idleJFloor;
 
     output_.setLeftJPixel(i,
-                          toByte(r * leftJLuma_[i]),
-                          toByte(g * leftJLuma_[i]),
-                          toByte(b * leftJLuma_[i]),
-                          toByte(w * ingress));
+                          toByte(r * visibleLuma),
+                          toByte(g * visibleLuma),
+                          toByte(b * visibleLuma),
+                          toByte(w * visibleIngress));
   }
 
   for (uint16_t i = 0; i < kRightJPixels; ++i) {
     const float ingress = sampleIngress(i, kRightJPixels, track);
     const float alpha = ingress > rightJLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
     rightJLuma_[i] = rightJLuma_[i] + ((ingress - rightJLuma_[i]) * alpha);
+    const float visibleLuma = rightJLuma_[i] > profile.idleJFloor ? rightJLuma_[i] : profile.idleJFloor;
+    const float visibleIngress = ingress > profile.idleJFloor ? ingress : profile.idleJFloor;
 
     output_.setRightJPixel(i,
-                           toByte(r * rightJLuma_[i]),
-                           toByte(g * rightJLuma_[i]),
-                           toByte(b * rightJLuma_[i]),
-                           toByte(w * ingress));
+                           toByte(r * visibleLuma),
+                           toByte(g * visibleLuma),
+                           toByte(b * visibleLuma),
+                           toByte(w * visibleIngress));
   }
 
   output_.show();

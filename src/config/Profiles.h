@@ -85,6 +85,9 @@ struct AnthuriumProfile {
   float rearRingScale;
   float rearRingPhaseOffset;
   bool rearRingMirror;
+  float idleFrontRingFloor;
+  float idleRearRingFloor;
+  float idleJFloor;
 
   RgbwFloat approachColor;
   RgbwFloat stillColor;
