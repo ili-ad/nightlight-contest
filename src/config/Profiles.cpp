@@ -3,10 +3,14 @@
 namespace Profiles {
 namespace {
 constexpr TopologyProfile kTopologyProfile = {{
-    {SpanRole::Ring, kRingPixels, false},
-    {SpanRole::LeftStamen, kLeftStamenPixels, false},
-    // Right stamen is reversed relative to logical center->tip direction.
-    {SpanRole::RightStamen, kRightStamenPixels, true},
+    // RightJ/J1: physical indices 0-11, wired top -> bottom.
+    {SpanRole::RightJ, kRightJPixels, false},
+    // LeftJ/J2: physical indices 12-23, wired bottom -> top.
+    {SpanRole::LeftJ, kLeftJPixels, false},
+    // FrontRing/O1: physical indices 24-67, starts at 6 o'clock, clockwise.
+    {SpanRole::FrontRing, kFrontRingPixels, false},
+    // RearRing/O2: physical indices 68-111, starts at 6 o'clock, counterclockwise.
+    {SpanRole::RearRing, kRearRingPixels, false},
 }};
 
 constexpr C4001Profile kC4001Profile = {

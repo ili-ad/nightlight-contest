@@ -16,16 +16,20 @@ void PixelOutput::clear() {
   strip_.clear();
 }
 
-bool PixelOutput::setRingPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
-  return setMappedPixel(layoutMap_.ringToPhysical(logicalPixel), r, g, b, w);
+bool PixelOutput::setRightJPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
+  return setMappedPixel(layoutMap_.rightJToPhysical(logicalPixel), r, g, b, w);
 }
 
-bool PixelOutput::setLeftStamenPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
-  return setMappedPixel(layoutMap_.leftStamenToPhysical(logicalPixel), r, g, b, w);
+bool PixelOutput::setLeftJPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
+  return setMappedPixel(layoutMap_.leftJToPhysical(logicalPixel), r, g, b, w);
 }
 
-bool PixelOutput::setRightStamenPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
-  return setMappedPixel(layoutMap_.rightStamenToPhysical(logicalPixel), r, g, b, w);
+bool PixelOutput::setFrontRingPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
+  return setMappedPixel(layoutMap_.frontRingToPhysical(logicalPixel), r, g, b, w);
+}
+
+bool PixelOutput::setRearRingPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
+  return setMappedPixel(layoutMap_.rearRingToPhysical(logicalPixel), r, g, b, w);
 }
 
 void PixelOutput::show() {

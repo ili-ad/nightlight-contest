@@ -12,9 +12,10 @@ class PixelOutput {
   void begin();
   void clear();
 
-  bool setRingPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w = 0);
-  bool setLeftStamenPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w = 0);
-  bool setRightStamenPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w = 0);
+  bool setRightJPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w = 0);
+  bool setLeftJPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w = 0);
+  bool setFrontRingPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w = 0);
+  bool setRearRingPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w = 0);
 
   void show();
 

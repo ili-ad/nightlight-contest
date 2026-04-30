@@ -18,16 +18,20 @@ LayoutMap::LayoutMap() : spans_{}, totalPhysicalPixels_(0) {
   totalPhysicalPixels_ = cursor;
 }
 
-uint16_t LayoutMap::ringToPhysical(uint16_t logicalPixel) const {
-  return roleToPhysical(Role::Ring, logicalPixel);
+uint16_t LayoutMap::rightJToPhysical(uint16_t logicalPixel) const {
+  return roleToPhysical(Role::RightJ, logicalPixel);
 }
 
-uint16_t LayoutMap::leftStamenToPhysical(uint16_t logicalPixel) const {
-  return roleToPhysical(Role::LeftStamen, logicalPixel);
+uint16_t LayoutMap::leftJToPhysical(uint16_t logicalPixel) const {
+  return roleToPhysical(Role::LeftJ, logicalPixel);
 }
 
-uint16_t LayoutMap::rightStamenToPhysical(uint16_t logicalPixel) const {
-  return roleToPhysical(Role::RightStamen, logicalPixel);
+uint16_t LayoutMap::frontRingToPhysical(uint16_t logicalPixel) const {
+  return roleToPhysical(Role::FrontRing, logicalPixel);
+}
+
+uint16_t LayoutMap::rearRingToPhysical(uint16_t logicalPixel) const {
+  return roleToPhysical(Role::RearRing, logicalPixel);
 }
 
 uint16_t LayoutMap::totalPhysicalPixels() const {
