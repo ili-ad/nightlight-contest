@@ -24,13 +24,10 @@ void App::setup() {
   Serial.println("Nightlight v2 production boot");
 
   pixelOutput_.begin();
-  stableSource_.begin();
-  clapDetector_.begin();
   anthuriumScene_.begin();
   nightlightScene_.begin();
   startupScene_.begin(millis());
 
-  modeController_.setMode(Mode::Anthurium);
 }
 
 void App::loop() {
@@ -38,6 +35,8 @@ void App::loop() {
 
   if (phase_ == AppPhase::Startup) {
     if (startupScene_.render(nowMs)) {
+      clapDetector_.begin();
+      stableSource_.begin();
       modeController_.setMode(Mode::Anthurium);
       phase_ = AppPhase::Running;
     }
