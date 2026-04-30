@@ -34,8 +34,10 @@ struct TopologyProfile {
 };
 
 struct C4001Profile {
+  uint8_t i2cAddress;
   uint32_t pollIntervalMs;
   uint32_t holdMs;
+  uint32_t initRetryMs;
 
   float rangeNearM;
   float rangeFarM;

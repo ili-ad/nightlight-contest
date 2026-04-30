@@ -7,8 +7,7 @@
 #include "../config/Profiles.h"
 
 namespace {
-constexpr uint8_t kC4001I2cAddress = 0x2A;
-DFRobot_C4001_I2C gC4001(&Wire, kC4001I2cAddress);
+DFRobot_C4001_I2C gC4001(&Wire, Profiles::c4001().i2cAddress);
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float span = profile.rangeFarM - profile.rangeNearM;
@@ -42,6 +41,8 @@ void C4001StableSource::begin() {
     gC4001.setSensorMode(eSpeedMode);
     gC4001.setDetectThres(11, 1200, 10);
     gC4001.setFrettingDetection(eON);
+  } else {
+    Serial.println("warn=c4001_init_failed");
   }
 
   lastPollMs_ = 0;
@@ -56,11 +57,20 @@ void C4001StableSource::begin() {
 }
 
 StableTrack C4001StableSource::read(uint32_t nowMs) {
+  const auto& profile = Profiles::c4001();
   if (!initialized_) {
     begin();
+  } else if (!sensorReady_ &&
+             (lastPollMs_ == 0 || (nowMs - lastPollMs_) >= profile.initRetryMs)) {
+    sensorReady_ = gC4001.begin();
+    if (sensorReady_) {
+      gC4001.setSensorMode(eSpeedMode);
+      gC4001.setDetectThres(11, 1200, 10);
+      gC4001.setFrettingDetection(eON);
+      Serial.println("event=c4001_init_recovered");
+    }
   }
 
-  const auto& profile = Profiles::c4001();
 
   if (lastPollMs_ != 0 && (nowMs - lastPollMs_) < profile.pollIntervalMs) {
     StableTrack t;

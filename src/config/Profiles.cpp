@@ -14,8 +14,10 @@ constexpr TopologyProfile kTopologyProfile = {{
 }};
 
 constexpr C4001Profile kC4001Profile = {
+    0x2B,   // i2cAddress
     33,     // pollIntervalMs
     420,    // holdMs
+    2000,   // initRetryMs
 
     0.35f,  // rangeNearM
     2.40f,  // rangeFarM
