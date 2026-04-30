@@ -3,16 +3,11 @@
 #include <Arduino.h>
 #include <math.h>
 
+#include "config/Profiles.h"
+
 namespace {
 constexpr uint8_t kDefaultMicAnalogPin = A0;
 
-constexpr float kFirstThresholdMin = 2.0f;
-constexpr float kFirstThresholdScale = 0.94f;
-constexpr float kFirstThresholdOffset = 1.07f;
-
-constexpr float kSecondThresholdMin = 1.54f;
-constexpr float kSecondThresholdScale = 0.54f;
-constexpr float kSecondThresholdOffset = 0.74f;
 
 constexpr uint32_t kTriggerCooldownMs = 320;
 constexpr uint32_t kSecondGapMinMs = 90;
@@ -74,23 +69,25 @@ bool ClapDetector::update(uint32_t nowMs) {
     }
   }
 
-  float thr1 = (noiseFloor_ * kFirstThresholdScale) + kFirstThresholdOffset;
-  if (thr1 < kFirstThresholdMin) {
-    thr1 = kFirstThresholdMin;
+  const Profiles::ClapProfile& clap = Profiles::clap();
+
+  float thr1 = (noiseFloor_ * clap.firstThresholdScale) + clap.firstThresholdOffset;
+  if (thr1 < clap.firstThresholdMin) {
+    thr1 = clap.firstThresholdMin;
   }
   if (thr1 > 14.0f) {
     thr1 = 14.0f;
   }
 
-  float thr2 = (noiseFloor_ * kSecondThresholdScale) + kSecondThresholdOffset;
-  if (thr2 < kSecondThresholdMin) {
-    thr2 = kSecondThresholdMin;
+  float thr2 = (noiseFloor_ * clap.secondThresholdScale) + clap.secondThresholdOffset;
+  if (thr2 < clap.secondThresholdMin) {
+    thr2 = clap.secondThresholdMin;
   }
   if (thr2 > (thr1 - 0.8f)) {
     thr2 = thr1 - 0.8f;
   }
-  if (thr2 < 4.0f) {
-    thr2 = 4.0f;
+  if (thr2 < clap.secondThresholdHardFloor) {
+    thr2 = clap.secondThresholdHardFloor;
   }
 
   const float release1 = thr1 * kFirstReleaseFactor;
