@@ -106,6 +106,10 @@ struct NightlightProfile {
   uint8_t baseB;
   uint8_t baseW;
 
+  float jScale;
+  float frontRingScale;
+  float rearRingScale;
+
   float breatheAmplitude;
   float breathePeriodMs;
 };

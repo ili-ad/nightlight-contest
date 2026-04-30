@@ -36,19 +36,32 @@ void NightlightScene::render(uint32_t nowMs) {
   }
   scale = clamp01(scale);
 
-  const uint8_t r = scaleChannel(profile.baseR, scale);
-  const uint8_t g = scaleChannel(profile.baseG, scale);
-  const uint8_t b = scaleChannel(profile.baseB, scale);
-  const uint8_t w = scaleChannel(profile.baseW, scale);
+  const uint8_t jR = scaleChannel(profile.baseR, scale * profile.jScale);
+  const uint8_t jG = scaleChannel(profile.baseG, scale * profile.jScale);
+  const uint8_t jB = scaleChannel(profile.baseB, scale * profile.jScale);
+  const uint8_t jW = scaleChannel(profile.baseW, scale * profile.jScale);
 
-  for (uint16_t i = 0; i < Profiles::kRingPixels; ++i) {
-    output_.setRingPixel(i, r, g, b, w);
+  const uint8_t frontRingR = scaleChannel(profile.baseR, scale * profile.frontRingScale);
+  const uint8_t frontRingG = scaleChannel(profile.baseG, scale * profile.frontRingScale);
+  const uint8_t frontRingB = scaleChannel(profile.baseB, scale * profile.frontRingScale);
+  const uint8_t frontRingW = scaleChannel(profile.baseW, scale * profile.frontRingScale);
+
+  const uint8_t rearRingR = scaleChannel(profile.baseR, scale * profile.rearRingScale);
+  const uint8_t rearRingG = scaleChannel(profile.baseG, scale * profile.rearRingScale);
+  const uint8_t rearRingB = scaleChannel(profile.baseB, scale * profile.rearRingScale);
+  const uint8_t rearRingW = scaleChannel(profile.baseW, scale * profile.rearRingScale);
+
+  for (uint16_t i = 0; i < Profiles::kRightJPixels; ++i) {
+    output_.setRightJPixel(i, jR, jG, jB, jW);
   }
-  for (uint16_t i = 0; i < Profiles::kLeftStamenPixels; ++i) {
-    output_.setLeftStamenPixel(i, r, g, b, w);
+  for (uint16_t i = 0; i < Profiles::kLeftJPixels; ++i) {
+    output_.setLeftJPixel(i, jR, jG, jB, jW);
   }
-  for (uint16_t i = 0; i < Profiles::kRightStamenPixels; ++i) {
-    output_.setRightStamenPixel(i, r, g, b, w);
+  for (uint16_t i = 0; i < Profiles::kFrontRingPixels; ++i) {
+    output_.setFrontRingPixel(i, frontRingR, frontRingG, frontRingB, frontRingW);
+  }
+  for (uint16_t i = 0; i < Profiles::kRearRingPixels; ++i) {
+    output_.setRearRingPixel(i, rearRingR, rearRingG, rearRingB, rearRingW);
   }
 
   output_.show();
