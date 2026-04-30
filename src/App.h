@@ -26,6 +26,8 @@ class App {
   static const char* modeName(Mode mode);
 
   void renderOff();
+  void maybePrintAnthuriumTelemetry(const StableTrack& track, uint32_t nowMs);
+  static const char* phaseName(StableTrack::MotionPhase phase);
 
   LayoutMap& layoutMap_;
   PixelOutput& pixelOutput_;
@@ -36,4 +38,5 @@ class App {
   NightlightScene nightlightScene_;
   StartupScene startupScene_;
   AppPhase phase_ = AppPhase::Startup;
+  uint32_t lastAnthuriumTelemetryMs_ = 0;
 };

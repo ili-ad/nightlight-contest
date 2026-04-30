@@ -101,6 +101,7 @@ void App::loop() {
       break;
     case Mode::Anthurium: {
       const StableTrack track = stableSource_.read(nowMs);
+      maybePrintAnthuriumTelemetry(track, nowMs);
       anthuriumScene_.render(track, nowMs);
       break;
     }
@@ -112,6 +113,31 @@ void App::loop() {
   delay(16);
 }
 
+void App::maybePrintAnthuriumTelemetry(const StableTrack& track, uint32_t nowMs) {
+  constexpr uint32_t kTelemetryIntervalMs = 500;
+  if (lastAnthuriumTelemetryMs_ != 0 && (nowMs - lastAnthuriumTelemetryMs_ < kTelemetryIntervalMs)) {
+    return;
+  }
+  lastAnthuriumTelemetryMs_ = nowMs;
+
+  Serial.print("telemetry mode=Anthurium online=");
+  Serial.print(track.online ? 1 : 0);
+  Serial.print(" hasTarget=");
+  Serial.print(track.hasTarget ? 1 : 0);
+  Serial.print(" rangeM=");
+  Serial.print(track.rangeM, 2);
+  Serial.print(" speedMps=");
+  Serial.print(track.speedMps, 2);
+  Serial.print(" charge=");
+  Serial.print(track.charge, 2);
+  Serial.print(" ingressLevel=");
+  Serial.print(track.ingressLevel, 2);
+  Serial.print(" continuity=");
+  Serial.print(track.continuity, 2);
+  Serial.print(" phase=");
+  Serial.println(phaseName(track.phase));
+}
+
 const char* App::modeName(Mode mode) {
   switch (mode) {
     case Mode::Off:
@@ -120,6 +146,21 @@ const char* App::modeName(Mode mode) {
       return "Nightlight";
     case Mode::Anthurium:
       return "Anthurium";
+    default:
+      return "Unknown";
+  }
+}
+
+const char* App::phaseName(StableTrack::MotionPhase phase) {
+  switch (phase) {
+    case StableTrack::MotionPhase::None:
+      return "None";
+    case StableTrack::MotionPhase::Approach:
+      return "Approach";
+    case StableTrack::MotionPhase::Still:
+      return "Still";
+    case StableTrack::MotionPhase::Retreat:
+      return "Retreat";
     default:
       return "Unknown";
   }
