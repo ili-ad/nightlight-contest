@@ -58,7 +58,8 @@ uint8_t PixelOutput::limitChannel(uint8_t value) const {
 }
 
 bool PixelOutput::setMappedPixel(uint16_t physicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
-  if (physicalPixel == LayoutMap::kInvalidPixel) {
+  if (physicalPixel == LayoutMap::kInvalidPixel ||
+      physicalPixel >= layoutMap_.totalPhysicalPixels()) {
     return false;
   }
 

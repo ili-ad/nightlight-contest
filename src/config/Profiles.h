@@ -10,6 +10,8 @@ constexpr uint16_t kRightJPixels = 12;
 constexpr uint16_t kLeftJPixels = 12;
 constexpr uint16_t kFrontRingPixels = 44;
 constexpr uint16_t kRearRingPixels = 44;
+// Expected total physical chain length; keep this equal to the sum of all
+// configured topology span logicalCount values.
 constexpr uint16_t kPhysicalPixels = 112;
 
 enum class SpanRole : uint8_t {
