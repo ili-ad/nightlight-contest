@@ -75,9 +75,9 @@ void App::loop() {
         break;
       case 'r':
       case 'R':
-        Serial.println("event=c4001_init_attempt");
-        stableSource_.requestManualInit();
-        stableSource_.service(nowMs);
+        Serial.println("event=c4001_init_begin");
+        if (stableSource_.tryInit()) Serial.println("event=c4001_init_recovered");
+        else Serial.println("warn=c4001_init_failed");
         break;
       default:
         break;

@@ -7,7 +7,8 @@
 #include "../config/Profiles.h"
 
 namespace {
-DFRobot_C4001_I2C gC4001(&Wire, Profiles::c4001().i2cAddress);
+constexpr uint8_t kC4001I2cAddress = 0x2B;
+DFRobot_C4001_I2C gC4001(&Wire, kC4001I2cAddress);
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float span = profile.rangeFarM - profile.rangeNearM;
@@ -24,18 +25,6 @@ float chargeFromRange(float rangeM, const Profiles::C4001Profile& profile) {
   return curved > 1.0f ? 1.0f : curved;
 }
 
-bool initC4001() {
-  Serial.println("event=c4001_init_begin");
-  if (!gC4001.begin()) {
-    Serial.println("warn=c4001_init_failed");
-    return false;
-  }
-  gC4001.setSensorMode(eSpeedMode);
-  gC4001.setDetectThres(11, 1200, 10);
-  gC4001.setFrettingDetection(eON);
-  Serial.println("event=c4001_init_recovered");
-  return true;
-}
 }  // namespace
 
 void C4001StableSource::begin() {
@@ -45,11 +34,11 @@ void C4001StableSource::begin() {
 #if defined(WIRE_HAS_TIMEOUT)
     Wire.setWireTimeout(25000, true);
 #endif
-    delay(10);
+    delay(60);
     wireReady_ = true;
   }
 
-  sensorReady_ = initC4001();
+  sensorReady_ = false;
   manualInitRequested_ = false;
   lastPollMs_ = 0;
   lastSeenMs_ = 0;
@@ -62,13 +51,24 @@ void C4001StableSource::begin() {
   phase_ = StableTrack::MotionPhase::None;
 }
 
+bool C4001StableSource::tryInit() {
+  if (!initialized_) begin();
+  if (!wireReady_) return false;
+  if (!gC4001.begin()) return false;
+  gC4001.setSensorMode(eSpeedMode);
+  gC4001.setDetectThres(11, 1200, 10);
+  gC4001.setFrettingDetection(eON);
+  sensorReady_ = true;
+  return true;
+}
+
 void C4001StableSource::service(uint32_t nowMs) {
   (void)nowMs;
   if (!initialized_) begin();
   if (!manualInitRequested_) return;
   manualInitRequested_ = false;
   const bool wasReady = sensorReady_;
-  sensorReady_ = initC4001();
+  sensorReady_ = tryInit();
   if (sensorReady_ && !wasReady) {
     Serial.println("event=c4001_read_resume");
   }
@@ -81,7 +81,18 @@ void C4001StableSource::requestManualInit() {
 
 StableTrack C4001StableSource::read(uint32_t nowMs) {
   const auto& profile = Profiles::c4001();
-  if (!initialized_) begin();
+  if (!initialized_ || !sensorReady_) {
+    StableTrack t;
+    t.online = false;
+    t.hasTarget = false;
+    t.rangeM = stableRangeM_;
+    t.speedMps = 0.0f;
+    t.charge = 0.0f;
+    t.ingressLevel = 0.0f;
+    t.continuity = 0.0f;
+    t.phase = StableTrack::MotionPhase::None;
+    return t;
+  }
   if (lastPollMs_ != 0 && (nowMs - lastPollMs_) < profile.pollIntervalMs) {
     StableTrack t;
     t.online = sensorReady_;

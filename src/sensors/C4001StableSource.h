@@ -7,6 +7,7 @@
 class C4001StableSource {
  public:
   void begin();
+  bool tryInit();
   void service(uint32_t nowMs);
   void requestManualInit();
   StableTrack read(uint32_t nowMs);
