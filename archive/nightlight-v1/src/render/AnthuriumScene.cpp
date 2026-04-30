@@ -159,8 +159,11 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
   }
 
   float temp[BuildConfig::kRingPixels] = {0.0f};
-  const float clearSec = BuildConfig::kAnthuriumTorusClearMs / 1000.0f;
-  const float decay = decayApprox(dtSec, clearSec);
+  const uint16_t ingressA = BuildConfig::kAnthuriumTorusIngressA % ringCount;
+  const uint16_t ingressB = BuildConfig::kAnthuriumTorusIngressB % ringCount;
+
+  const float frontDecay = decayApprox(dtSec, BuildConfig::kAnthuriumFrontRingMemorySeconds);
+  const float rearDecay = decayApprox(dtSec, BuildConfig::kAnthuriumRearRingMemorySeconds);
   const float diffusion = BuildConfig::kAnthuriumTorusDiffusionPerSecond * dtSec;
 
   for (uint16_t i = 0; i < ringCount; ++i) {
@@ -169,17 +172,23 @@ void AnthuriumScene::updateDynamics(const RenderIntent& intent) {
 
     float value = mTorusCharge[i];
     value += (mTorusCharge[left] + mTorusCharge[right] - (2.0f * mTorusCharge[i])) * diffusion;
-    value *= decay;
+
+    const float distA = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(ingressA)));
+    const float distB = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(ingressB)));
+    const float wrapDistA = (distA > (ringCount * 0.5f)) ? (ringCount - distA) : distA;
+    const float wrapDistB = (distB > (ringCount * 0.5f)) ? (ringCount - distB) : distB;
+    const float localDecay = (wrapDistA <= wrapDistB) ? frontDecay : rearDecay;
+
+    value *= localDecay;
     temp[i] = clamp01(value);
   }
 
-  const uint16_t ingressA = BuildConfig::kAnthuriumTorusIngressA % ringCount;
-  const uint16_t ingressB = BuildConfig::kAnthuriumTorusIngressB % ringCount;
   const float spread = BuildConfig::kAnthuriumTorusIngressSpread;
   const float ingressWidth = (spread < 0.01f) ? 0.01f : (spread * 2.0f);
   const float torusInput = clamp01(mStableCharge * BuildConfig::kAnthuriumDistanceToChargeGain) * dtSec *
                            BuildConfig::kAnthuriumTorusAccumulationGain *
-                           BuildConfig::kAnthuriumContinuousInjectionGain;
+                           BuildConfig::kAnthuriumContinuousInjectionGain *
+                           BuildConfig::kAnthuriumTorusIngressImpulseGain;
 
   for (uint16_t i = 0; i < ringCount; ++i) {
     const float distA = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(ingressA)));
@@ -276,7 +285,7 @@ void AnthuriumScene::writeFrame(PixelBus& bus, const RenderIntent& intent, bool 
     const uint16_t px = ring.start + i;
     const float field = sampleTorusField(i, ring.count);
     const float targetBrightness = clamp01((field * intent.sceneFieldLevel) +
-                                           (mStableCharge * BuildConfig::kAnthuriumTorusInstantGain));
+                                           BuildConfig::kAnthuriumRingUniformPresenceGlow);
     const float torusAlpha = clamp01(BuildConfig::kAnthuriumTorusBrightnessSmoothingAlpha);
     const float torusSmoothed = mRingBrightness[i] + ((targetBrightness - mRingBrightness[i]) * torusAlpha);
     const float torusDeadbanded =

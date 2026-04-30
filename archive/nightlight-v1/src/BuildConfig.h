@@ -289,13 +289,15 @@ namespace BuildConfig {
   // Anthurium reservoir active-scene tuning (POL-021)
   // ---------------------------------------------------------------------------
   constexpr uint32_t kAnthuriumIngressTravelMs = 3000;
-  constexpr uint32_t kAnthuriumTorusClearMs = 18000;
   constexpr float kAnthuriumDistanceToChargeGain = 0.92f;
   constexpr float kAnthuriumIngressBaseLevel = 0.18f;
   constexpr float kAnthuriumTorusFieldBaseLevel = 0.30f;
   constexpr float kAnthuriumEnergyWhiteBoostGain = 0.20f;
   constexpr float kAnthuriumTorusAccumulationGain = 0.45f;
-  constexpr float kAnthuriumTorusInstantGain = 0.08f;
+  constexpr float kAnthuriumTorusIngressImpulseGain = 1.0f;
+  constexpr float kAnthuriumRingUniformPresenceGlow = 0.01f;
+  constexpr float kAnthuriumFrontRingMemorySeconds = 3.0f;
+  constexpr float kAnthuriumRearRingMemorySeconds = 4.0f;
   constexpr float kAnthuriumTorusBaseFieldLevel = 0.06f;
   constexpr float kAnthuriumTorusDiffusionPerSecond = 0.34f;
   constexpr float kAnthuriumContinuousInjectionGain = 1.0f;
