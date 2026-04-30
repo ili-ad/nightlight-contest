@@ -63,6 +63,8 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     0.18f,  // idleFrontRingFloor
     0.14f,  // idleRearRingFloor
     0.16f,  // idleJFloor
+    false,  // rightJIngressReversed
+    true,   // leftJIngressReversed
 
     {1.00f, 0.28f, 0.08f, 0.20f},  // approachColor
     {0.95f, 0.62f, 0.20f, 0.34f},  // stillColor
