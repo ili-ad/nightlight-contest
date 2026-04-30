@@ -16,6 +16,9 @@ LayoutMap::LayoutMap() : spans_{}, totalPhysicalPixels_(0) {
   }
 
   totalPhysicalPixels_ = cursor;
+
+  // Profiles::kPhysicalPixels is the expected installed chain length and should
+  // remain equal to the sum of configured topology span logicalCount values.
 }
 
 uint16_t LayoutMap::rightJToPhysical(uint16_t logicalPixel) const {
