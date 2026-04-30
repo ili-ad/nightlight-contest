@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <math.h>
 
-#include "config/Profiles.h"
+#include "../config/Profiles.h"
 
 namespace {
 constexpr uint8_t kDefaultMicAnalogPin = A0;
