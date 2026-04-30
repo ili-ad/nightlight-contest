@@ -3,6 +3,7 @@
 #include "modes/ModeController.h"
 #include "scenes/AnthuriumScene.h"
 #include "scenes/NightlightScene.h"
+#include "scenes/StartupScene.h"
 #include "sensors/C4001StableSource.h"
 #include "sensors/ClapDetector.h"
 
@@ -17,6 +18,11 @@ class App {
   void loop();
 
  private:
+  enum class AppPhase : uint8_t {
+    Startup,
+    Running,
+  };
+
   static const char* modeName(Mode mode);
 
   void renderOff();
@@ -28,4 +34,6 @@ class App {
   ModeController modeController_;
   AnthuriumScene anthuriumScene_;
   NightlightScene nightlightScene_;
+  StartupScene startupScene_;
+  AppPhase phase_ = AppPhase::Startup;
 };

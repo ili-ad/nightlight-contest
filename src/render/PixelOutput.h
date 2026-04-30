@@ -17,6 +17,9 @@ class PixelOutput {
   bool setFrontRingPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w = 0);
   bool setRearRingPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w = 0);
 
+  bool setPhysicalPixel(uint16_t physicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w = 0);
+  uint16_t physicalPixelCount() const;
+
   void show();
 
  private:

@@ -19,3 +19,7 @@ Mode ModeController::advanceMode() {
   }
   return mode_;
 }
+
+void ModeController::setMode(Mode mode) {
+  mode_ = mode;
+}

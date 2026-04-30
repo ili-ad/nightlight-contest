@@ -12,6 +12,7 @@ class ModeController {
  public:
   Mode currentMode() const;
   Mode advanceMode();
+  void setMode(Mode mode);
 
  private:
   Mode mode_ = Mode::Off;

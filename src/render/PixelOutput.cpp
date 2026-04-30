@@ -33,6 +33,14 @@ bool PixelOutput::setRearRingPixel(uint16_t logicalPixel, uint8_t r, uint8_t g, 
   return setMappedPixel(layoutMap_.rearRingToPhysical(logicalPixel), r, g, b, w);
 }
 
+bool PixelOutput::setPhysicalPixel(uint16_t physicalPixel, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
+  return setMappedPixel(physicalPixel, r, g, b, w);
+}
+
+uint16_t PixelOutput::physicalPixelCount() const {
+  return layoutMap_.totalPhysicalPixels();
+}
+
 void PixelOutput::show() {
   strip_.show();
 }

@@ -15,7 +15,8 @@ App::App(LayoutMap& layoutMap, PixelOutput& pixelOutput)
     : layoutMap_(layoutMap),
       pixelOutput_(pixelOutput),
       anthuriumScene_(pixelOutput),
-      nightlightScene_(pixelOutput) {}
+      nightlightScene_(pixelOutput),
+      startupScene_(pixelOutput) {}
 
 void App::setup() {
   (void)layoutMap_;
@@ -27,12 +28,22 @@ void App::setup() {
   clapDetector_.begin();
   anthuriumScene_.begin();
   nightlightScene_.begin();
+  startupScene_.begin(millis());
 
-  renderOff();
+  modeController_.setMode(Mode::Anthurium);
 }
 
 void App::loop() {
   const uint32_t nowMs = millis();
+
+  if (phase_ == AppPhase::Startup) {
+    if (startupScene_.render(nowMs)) {
+      modeController_.setMode(Mode::Anthurium);
+      phase_ = AppPhase::Running;
+    }
+    delay(16);
+    return;
+  }
 
   if (clapDetector_.update(nowMs)) {
     const Mode nextMode = modeController_.advanceMode();

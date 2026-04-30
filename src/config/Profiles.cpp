@@ -67,6 +67,16 @@ constexpr OutputProfile kOutputProfile = {
     80,     // maxChannel
 };
 
+
+constexpr StartupProfile kStartupProfile = {
+    20,  // stepMs
+    250, // holdMs
+    32,  // r
+    12,  // g
+    2,   // b
+    16,  // w
+};
+
 constexpr NightlightProfile kNightlightProfile = {
     18,       // baseR
     7,        // baseG
@@ -80,6 +90,7 @@ constexpr ProductProfile kProductProfile = {
     kTopologyProfile,
     kC4001Profile,
     kAnthuriumProfile,
+    kStartupProfile,
     kNightlightProfile,
     kOutputProfile,
 };
@@ -95,6 +106,10 @@ const C4001Profile& c4001() {
 
 const AnthuriumProfile& anthurium() {
   return kProductProfile.anthurium;
+}
+
+const StartupProfile& startup() {
+  return kProductProfile.startup;
 }
 
 const NightlightProfile& nightlight() {
