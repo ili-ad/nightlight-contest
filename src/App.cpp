@@ -45,6 +45,45 @@ void App::loop() {
     return;
   }
 
+  while (Serial.available() > 0) {
+    const char command = static_cast<char>(Serial.read());
+    Mode nextMode = modeController_.currentMode();
+    bool modeChanged = false;
+
+    switch (command) {
+      case 'a':
+      case 'A':
+        nextMode = Mode::Anthurium;
+        modeController_.setMode(nextMode);
+        modeChanged = true;
+        break;
+      case 'n':
+      case 'N':
+        nextMode = Mode::Nightlight;
+        modeController_.setMode(nextMode);
+        modeChanged = true;
+        break;
+      case 'o':
+      case 'O':
+        nextMode = Mode::Off;
+        modeController_.setMode(nextMode);
+        modeChanged = true;
+        break;
+      case 'c':
+      case 'C':
+        nextMode = modeController_.advanceMode();
+        modeChanged = true;
+        break;
+      default:
+        break;
+    }
+
+    if (modeChanged) {
+      Serial.print("event=serial_mode mode=");
+      Serial.println(modeName(nextMode));
+    }
+  }
+
   if (clapDetector_.update(nowMs)) {
     const Mode nextMode = modeController_.advanceMode();
     Serial.print("event=double_clap mode=");
