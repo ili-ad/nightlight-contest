@@ -88,12 +88,27 @@ void segmentDirectionTest() {
   directionTest(J1_START, J1_COUNT, true, cR(26));
 
   // J2: bottom -> top
-  directionTest(J2_START, J2_COUNT, false, cG(26));
+  directionTest(J2_START, J2_COUNT, true, cG(26));
 
   // Front ring: 6 o'clock clockwise back to 6
   directionTest(FRONT_RING_START, FRONT_RING_COUNT, true, cB(26));
 
   // Rear ring: 6 o'clock counterclockwise back to 6
+  directionTest(REAR_RING_START, REAR_RING_COUNT, true, cW(26));
+}
+
+void reverseDirectionTest() {
+  // Reverse visual validation:
+  // J1: bottom -> top
+  directionTest(J1_START, J1_COUNT, false, cR(26));
+
+  // J2: top -> bottom
+  directionTest(J2_START, J2_COUNT, false, cG(26));
+
+  // Front ring: 6 o'clock counterclockwise back to 6
+  directionTest(FRONT_RING_START, FRONT_RING_COUNT, false, cB(26));
+
+  // Rear ring: 6 o'clock clockwise back to 6
   directionTest(REAR_RING_START, REAR_RING_COUNT, false, cW(26));
 }
 
@@ -127,8 +142,9 @@ void setup() {
 void loop() {
   progressiveFillAll();       // 1) 0 -> 111 physical order
   segmentFillTest();          // 2) segment fill
-  segmentDirectionTest();     // 3) direction by segment
-  lowWhiteTest();             // 4) low all-white RGBW
-  rgbwChannelTest();          // 5) low R/G/B/W channel test
+  segmentDirectionTest();     // 3) physical direction by segment
+  reverseDirectionTest();     // 4) reverse direction visual validation
+  lowWhiteTest();             // 5) low all-white RGBW
+  rgbwChannelTest();          // 6) low R/G/B/W channel test
   delay(700);
 }
