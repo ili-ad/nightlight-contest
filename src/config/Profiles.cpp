@@ -69,13 +69,13 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     0.24f,  // lumaRiseAlpha
     0.14f,  // lumaFallAlpha
 
-    0.18f,  // idleFrontRingFloor
-    0.14f,  // idleRearRingFloor
-    0.16f,  // idleJFloor
+    0.10f,  // idleFrontRingFloor
+    0.07f,  // idleRearRingFloor
+    0.05f,  // idleJFloor
 
     {1.00f, 0.28f, 0.08f, 0.20f},  // approachColor
     {0.22f, 0.45f, 1.00f, 0.18f},  // retreatColor
-    {0.55f, 0.22f, 0.10f, 0.05f},  // idleColor
+    {0.46f, 0.18f, 0.06f, 0.04f},  // idleColor
 };
 
 
