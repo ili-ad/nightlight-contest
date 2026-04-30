@@ -19,3 +19,4 @@ This repository is now in a deliberate reset posture:
 
 - The v2 production app uses clap mode control and C4001 radar tracking.
 - Ambient lux / BH1750 behavior is not part of runtime behavior in production builds.
+- Production pixel output is guarded by a current-limited brightness cap (`Profiles::output()` in `src/config/Profiles.*`), intended as a safety governor while final brightness tuning is done on a bench supply.
