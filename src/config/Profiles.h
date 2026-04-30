@@ -97,6 +97,17 @@ struct AnthuriumProfile {
   RgbwFloat idleColor;
 };
 
+struct ClapProfile {
+  float firstThresholdMin;
+  float firstThresholdScale;
+  float firstThresholdOffset;
+
+  float secondThresholdMin;
+  float secondThresholdScale;
+  float secondThresholdOffset;
+  float secondThresholdHardFloor;
+};
+
 struct OutputProfile {
   float globalScale;
   uint8_t maxChannel;
@@ -132,6 +143,7 @@ struct ProductProfile {
   StartupProfile startup;
   NightlightProfile nightlight;
   OutputProfile output;
+  ClapProfile clap;
 };
 
 const TopologyProfile& topology();
@@ -140,6 +152,7 @@ const AnthuriumProfile& anthurium();
 const StartupProfile& startup();
 const NightlightProfile& nightlight();
 const OutputProfile& output();
+const ClapProfile& clap();
 const ProductProfile& product();
 
 }  // namespace Profiles

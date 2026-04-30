@@ -71,6 +71,17 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
 };
 
 
+constexpr ClapProfile kClapProfile = {
+    1.50f,  // firstThresholdMin
+    0.94f,  // firstThresholdScale
+    1.07f,  // firstThresholdOffset
+
+    1.20f,  // secondThresholdMin
+    0.54f,  // secondThresholdScale
+    0.74f,  // secondThresholdOffset
+    2.80f,  // secondThresholdHardFloor
+};
+
 constexpr OutputProfile kOutputProfile = {
     0.18f,  // globalScale
     80,     // maxChannel
@@ -107,6 +118,7 @@ constexpr ProductProfile kProductProfile = {
     kStartupProfile,
     kNightlightProfile,
     kOutputProfile,
+    kClapProfile,
 };
 }  // namespace
 
@@ -132,6 +144,10 @@ const NightlightProfile& nightlight() {
 
 const OutputProfile& output() {
   return kProductProfile.output;
+}
+
+const ClapProfile& clap() {
+  return kProductProfile.clap;
 }
 
 const ProductProfile& product() {
