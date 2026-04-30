@@ -26,15 +26,23 @@ class AnthuriumScene {
   static float polynomialKernel(float distance, float width);
 
   void updateTorus(const StableTrack& track, float dtSec);
-  Profiles::RgbwFloat phaseColor(const StableTrack& track) const;
+  void updateContinuousSignal(const StableTrack& track);
+  Profiles::RgbwFloat signalColor(const StableTrack& track) const;
   static void fadeColor(RgbwField& color, float fade);
   static void addColor(RgbwField& color, const Profiles::RgbwFloat& add, float amount);
   float sampleIngress(uint16_t pixel, uint16_t count, const StableTrack& track, bool reverseLogical) const;
+  static float smoothToward(float current, float target, float riseAlpha, float fallAlpha);
 
   PixelOutput& output_;
   bool initialized_ = false;
   uint32_t lastNowMs_ = 0;
   float ingressPhase_ = 0.0f;
+  float proximity_ = 0.0f;
+  float signedSpeedMps_ = 0.0f;
+  float speedLevel_ = 0.0f;
+  float approachLevel_ = 0.0f;
+  float retreatLevel_ = 0.0f;
+  float motionLevel_ = 0.0f;
 
   static constexpr uint16_t kFrontRingPixels = Profiles::kFrontRingPixels;
   static constexpr uint16_t kRearRingPixels = Profiles::kRearRingPixels;

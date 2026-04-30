@@ -50,6 +50,14 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     0.55f,  // torusInstantGain
     0.02f,  // torusBaseField
     3.00f,  // ringColorMemorySec
+    0.05f,  // speedDeadbandMps
+    0.80f,  // speedFullScaleMps
+    0.34f,  // approachRiseAlpha
+    0.10f,  // approachFallAlpha
+    0.34f,  // retreatRiseAlpha
+    0.10f,  // retreatFallAlpha
+    0.26f,  // motionRiseAlpha
+    0.08f,  // motionFallAlpha
 
     7,      // ingressA
     29,     // ingressB
@@ -68,8 +76,7 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     true,   // leftJIngressReversed
 
     {1.00f, 0.28f, 0.08f, 0.20f},  // approachColor
-    {0.95f, 0.62f, 0.20f, 0.34f},  // stillColor
-    {0.72f, 0.26f, 0.45f, 0.12f},  // retreatColor
+    {0.22f, 0.45f, 1.00f, 0.18f},  // retreatColor
     {0.55f, 0.22f, 0.10f, 0.05f},  // idleColor
 };
 
