@@ -3,9 +3,9 @@
 #include <stdint.h>
 
 enum class Mode : uint8_t {
-  Off = 0,
+  Anthurium = 0,
   Nightlight = 1,
-  Anthurium = 2,
+  Off = 2,
 };
 
 class ModeController {
@@ -15,5 +15,5 @@ class ModeController {
   void setMode(Mode mode);
 
  private:
-  Mode mode_ = Mode::Off;
+  Mode mode_ = Mode::Anthurium;
 };

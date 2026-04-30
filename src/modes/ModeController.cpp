@@ -6,15 +6,15 @@ Mode ModeController::currentMode() const {
 
 Mode ModeController::advanceMode() {
   switch (mode_) {
-    case Mode::Off:
+    case Mode::Anthurium:
       mode_ = Mode::Nightlight;
       break;
     case Mode::Nightlight:
-      mode_ = Mode::Anthurium;
-      break;
-    case Mode::Anthurium:
-    default:
       mode_ = Mode::Off;
+      break;
+    case Mode::Off:
+    default:
+      mode_ = Mode::Anthurium;
       break;
   }
   return mode_;
