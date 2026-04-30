@@ -37,6 +37,12 @@ bool i2cDevicePresent(uint8_t address) {
   const uint8_t status = Wire.endTransmission();
   return status == 0;
 }
+
+void configureSensor() {
+  gC4001.setSensorMode(eSpeedMode);
+  gC4001.setDetectThres(11, 1200, 10);
+  gC4001.setFrettingDetection(eON);
+}
 }  // namespace
 
 void C4001StableSource::begin() {
@@ -46,6 +52,7 @@ void C4001StableSource::begin() {
     wireReady_ = true;
   }
   sensorReady_ = false;
+  manualInitRequested_ = false;
   lastPollMs_ = 0;
   lastInitAttemptMs_ = 0;
   lastSeenMs_ = 0;
@@ -58,33 +65,54 @@ void C4001StableSource::begin() {
   phase_ = StableTrack::MotionPhase::None;
 }
 
-StableTrack C4001StableSource::read(uint32_t nowMs) {
+void C4001StableSource::service(uint32_t nowMs) {
   const auto& profile = Profiles::c4001();
   if (!initialized_) {
     begin();
   }
 
-  if (!sensorReady_ &&
-      (lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.initRetryMs)) {
-    lastInitAttemptMs_ = nowMs;
-    if (!wireReady_) {
-      Wire.begin();
-      wireReady_ = true;
-    }
-
-    if (i2cDevicePresent(profile.i2cAddress)) {
-      sensorReady_ = gC4001.begin();
-      if (sensorReady_) {
-        gC4001.setSensorMode(eSpeedMode);
-        gC4001.setDetectThres(11, 1200, 10);
-        gC4001.setFrettingDetection(eON);
-        Serial.println("event=c4001_init_recovered");
-      } else {
-        Serial.println("warn=c4001_init_failed");
-      }
-    }
+  if (sensorReady_) {
+    return;
   }
 
+  const bool retryElapsed = (lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.initRetryMs);
+  if (!manualInitRequested_ && (!profile.enableC4001AutoInit || !retryElapsed)) {
+    return;
+  }
+  manualInitRequested_ = false;
+  lastInitAttemptMs_ = nowMs;
+
+  if (!wireReady_) {
+    Wire.begin();
+    wireReady_ = true;
+  }
+
+  if (!i2cDevicePresent(profile.i2cAddress)) {
+    Serial.println("warn=c4001_init_failed");
+    return;
+  }
+
+  sensorReady_ = gC4001.begin();
+  if (sensorReady_) {
+    configureSensor();
+    Serial.println("event=c4001_init_recovered");
+  } else {
+    Serial.println("warn=c4001_init_failed");
+  }
+}
+
+void C4001StableSource::requestManualInit() {
+  if (!initialized_) {
+    begin();
+  }
+  manualInitRequested_ = true;
+}
+
+StableTrack C4001StableSource::read(uint32_t nowMs) {
+  const auto& profile = Profiles::c4001();
+  if (!initialized_) {
+    begin();
+  }
   if (lastPollMs_ != 0 && (nowMs - lastPollMs_) < profile.pollIntervalMs) {
     StableTrack t;
     t.online = sensorReady_;
