@@ -46,3 +46,42 @@ This sketch is intentionally isolated under `bench/` and does not modify the pro
 - Keep supply voltage fixed at **5.00V**.
 - Raise only the **bench supply current limit** during diagnostics.
 - Keep commissioning brightness conservative (e.g., 24; max 32) until thermal/current margins are re-verified.
+
+## Arduino compile smoke test
+
+Use this lightweight compile check to validate both the production app and the 112-pixel commissioning sketch.
+
+### Requirements
+
+- Arduino CLI installed and on `PATH`.
+- Arduino core for **Nano Every** installed (`arduino:megaavr`).
+- Libraries installed:
+  - `Adafruit NeoPixel`
+  - `DFRobot_C4001`
+
+Example setup commands:
+
+```bash
+arduino-cli core update-index
+arduino-cli core install arduino:megaavr
+arduino-cli lib install "Adafruit NeoPixel" "DFRobot_C4001"
+```
+
+### Compile commands
+
+Default board target (Nano Every):
+
+```bash
+./scripts/compile-arduino.sh
+```
+
+Custom board FQBN (configurable):
+
+```bash
+ARDUINO_FQBN="arduino:megaavr:nona4809" ./scripts/compile-arduino.sh
+```
+
+This compiles both:
+
+- Production: `NightlightContest.ino`
+- Bench commissioning (112 pixels): `bench/CommissioningTopology112/CommissioningTopology112.ino`
