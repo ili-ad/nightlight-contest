@@ -14,8 +14,10 @@ class C4001StableSource {
   static float smooth(float previous, float target, float alpha);
 
   bool initialized_ = false;
+  bool wireReady_ = false;
   bool sensorReady_ = false;
   uint32_t lastPollMs_ = 0;
+  uint32_t lastInitAttemptMs_ = 0;
   uint32_t lastSeenMs_ = 0;
 
   bool stableHasTarget_ = false;
