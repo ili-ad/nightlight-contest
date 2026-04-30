@@ -44,6 +44,8 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     2.20f,  // jColorMemorySec
     0.55f,  // jAdvectionStrength
     0.22f,  // jDiffusionStrength
+    false,  // rightJIngressReversed
+    true,   // leftJIngressReversed
     1.10f,  // jTipInjectionGain
     0.10f,  // jBaseGlow
 
