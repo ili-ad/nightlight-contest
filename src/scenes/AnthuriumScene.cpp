@@ -10,6 +10,12 @@ void AnthuriumScene::begin() {
   initialized_ = true;
   lastNowMs_ = 0;
   ingressPhase_ = 0.0f;
+  proximity_ = 0.0f;
+  signedSpeedMps_ = 0.0f;
+  speedLevel_ = 0.0f;
+  approachLevel_ = 0.0f;
+  retreatLevel_ = 0.0f;
+  motionLevel_ = 0.0f;
 
   for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     frontField_[i] = 0.0f;
@@ -54,8 +60,9 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   }
 
   updateTorus(track, dtSec);
+  updateContinuousSignal(track);
 
-  const auto ringColorAdd = phaseColor(track);
+  const auto ringColorAdd = signalColor(track);
   const float r = ringColorAdd.r;
   const float g = ringColorAdd.g;
   const float b = ringColorAdd.b;
@@ -183,27 +190,51 @@ void AnthuriumScene::updateTorus(const StableTrack& track, float dtSec) {
   }
 }
 
-Profiles::RgbwFloat AnthuriumScene::phaseColor(const StableTrack& track) const {
+void AnthuriumScene::updateContinuousSignal(const StableTrack& track) {
   const auto& profile = Profiles::anthurium();
-  const Profiles::RgbwFloat* color = &profile.idleColor;
+  const auto& sensor = Profiles::c4001();
 
-  switch (track.phase) {
-    case StableTrack::MotionPhase::Approach:
-      color = &profile.approachColor;
-      break;
-    case StableTrack::MotionPhase::Still:
-      color = &profile.stillColor;
-      break;
-    case StableTrack::MotionPhase::Retreat:
-      color = &profile.retreatColor;
-      break;
-    case StableTrack::MotionPhase::None:
-    default:
-      color = &profile.idleColor;
-      break;
+  float proximity = 0.0f;
+  if (track.hasTarget && track.online) {
+    const float rangeSpan = sensor.rangeFarM - sensor.rangeNearM;
+    const float safeSpan = rangeSpan > 0.001f ? rangeSpan : 0.001f;
+    const float nearNorm = 1.0f - ((track.rangeM - sensor.rangeNearM) / safeSpan);
+    proximity = clamp01(nearNorm);
   }
+  proximity_ = proximity;
 
-  return *color;
+  signedSpeedMps_ = track.speedMps;
+  const float absSpeed = fabsf(signedSpeedMps_);
+  const float fullScale = profile.speedFullScaleMps > 0.001f ? profile.speedFullScaleMps : 0.001f;
+  speedLevel_ = clamp01(absSpeed / fullScale);
+
+  const float deadband = profile.speedDeadbandMps > 0.0f ? profile.speedDeadbandMps : 0.0f;
+  const float negSpeed = (-signedSpeedMps_) - deadband;
+  const float posSpeed = signedSpeedMps_ - deadband;
+  const float approachTarget = clamp01(negSpeed / fullScale);
+  const float retreatTarget = clamp01(posSpeed / fullScale);
+  const float motionTarget = clamp01((absSpeed - deadband) / fullScale);
+
+  approachLevel_ = smoothToward(approachLevel_, approachTarget, profile.approachRiseAlpha, profile.approachFallAlpha);
+  retreatLevel_ = smoothToward(retreatLevel_, retreatTarget, profile.retreatRiseAlpha, profile.retreatFallAlpha);
+  motionLevel_ = smoothToward(motionLevel_, motionTarget, profile.motionRiseAlpha, profile.motionFallAlpha);
+}
+
+Profiles::RgbwFloat AnthuriumScene::signalColor(const StableTrack& track) const {
+  const auto& profile = Profiles::anthurium();
+  Profiles::RgbwFloat color = profile.idleColor;
+
+  const float trust = clamp01(track.continuity);
+  const float intensity = clamp01((0.40f * proximity_) + (0.60f * track.charge));
+  const float energy = clamp01((0.20f * speedLevel_) + (0.80f * motionLevel_));
+  const float approach = clamp01(approachLevel_ * energy * intensity * trust);
+  const float retreat = clamp01(retreatLevel_ * energy * intensity * trust);
+
+  color.r = clamp01(color.r + (profile.approachColor.r * approach) + (profile.retreatColor.r * retreat));
+  color.g = clamp01(color.g + (profile.approachColor.g * approach) + (profile.retreatColor.g * retreat));
+  color.b = clamp01(color.b + (profile.approachColor.b * approach) + (profile.retreatColor.b * retreat));
+  color.w = clamp01(color.w + (profile.approachColor.w * approach) + (profile.retreatColor.w * retreat));
+  return color;
 }
 
 void AnthuriumScene::fadeColor(RgbwField& color, float fade) {
@@ -257,4 +288,11 @@ float AnthuriumScene::polynomialKernel(float distance, float width) {
   const float safeWidth = width < 0.001f ? 0.001f : width;
   const float x = clamp01(1.0f - (distance / safeWidth));
   return x * x;
+}
+
+float AnthuriumScene::smoothToward(float current, float target, float riseAlpha, float fallAlpha) {
+  const float rise = clamp01(riseAlpha);
+  const float fall = clamp01(fallAlpha);
+  const float alpha = target > current ? rise : fall;
+  return current + ((target - current) * alpha);
 }

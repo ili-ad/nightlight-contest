@@ -77,6 +77,14 @@ struct AnthuriumProfile {
   float torusInstantGain;
   float torusBaseField;
   float ringColorMemorySec;
+  float speedDeadbandMps;
+  float speedFullScaleMps;
+  float approachRiseAlpha;
+  float approachFallAlpha;
+  float retreatRiseAlpha;
+  float retreatFallAlpha;
+  float motionRiseAlpha;
+  float motionFallAlpha;
 
   uint16_t ingressA;
   uint16_t ingressB;
@@ -95,7 +103,6 @@ struct AnthuriumProfile {
   bool leftJIngressReversed;
 
   RgbwFloat approachColor;
-  RgbwFloat stillColor;
   RgbwFloat retreatColor;
   RgbwFloat idleColor;
 };
