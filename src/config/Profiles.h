@@ -91,6 +91,15 @@ struct OutputProfile {
   uint8_t maxChannel;
 };
 
+struct StartupProfile {
+  uint16_t stepMs;
+  uint16_t holdMs;
+  uint8_t r;
+  uint8_t g;
+  uint8_t b;
+  uint8_t w;
+};
+
 struct NightlightProfile {
   uint8_t baseR;
   uint8_t baseG;
@@ -105,6 +114,7 @@ struct ProductProfile {
   TopologyProfile topology;
   C4001Profile c4001;
   AnthuriumProfile anthurium;
+  StartupProfile startup;
   NightlightProfile nightlight;
   OutputProfile output;
 };
@@ -112,6 +122,7 @@ struct ProductProfile {
 const TopologyProfile& topology();
 const C4001Profile& c4001();
 const AnthuriumProfile& anthurium();
+const StartupProfile& startup();
 const NightlightProfile& nightlight();
 const OutputProfile& output();
 const ProductProfile& product();
