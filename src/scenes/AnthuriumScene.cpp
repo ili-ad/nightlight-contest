@@ -9,7 +9,7 @@ AnthuriumScene::AnthuriumScene(PixelOutput& output) : output_(output) {}
 void AnthuriumScene::begin() {
   initialized_ = true;
   lastNowMs_ = 0;
-  ingressPhase_ = 0.0f;
+  jConveyorPhase_ = 0.0f;
   proximity_ = 0.0f;
   signedSpeedMps_ = 0.0f;
   speedLevel_ = 0.0f;
@@ -26,12 +26,8 @@ void AnthuriumScene::begin() {
     rearLuma_[i] = 0.0f;
     rearColor_[i] = {0.0f, 0.0f, 0.0f, 0.0f};
   }
-  for (uint16_t i = 0; i < kLeftJPixels; ++i) {
-    leftJLuma_[i] = 0.0f;
-  }
-  for (uint16_t i = 0; i < kRightJPixels; ++i) {
-    rightJLuma_[i] = 0.0f;
-  }
+  for (uint16_t i = 0; i < kLeftJPixels; ++i) leftJColor_[i] = {0.0f, 0.0f, 0.0f, 0.0f};
+  for (uint16_t i = 0; i < kRightJPixels; ++i) rightJColor_[i] = {0.0f, 0.0f, 0.0f, 0.0f};
 }
 
 void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
@@ -54,140 +50,64 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
 
   const auto& profile = Profiles::anthurium();
 
-  ingressPhase_ += dtSec / profile.ingressTravelSec;
-  while (ingressPhase_ >= 1.0f) {
-    ingressPhase_ -= 1.0f;
+  const float travelSec = profile.jConveyorTravelSec > 0.001f ? profile.jConveyorTravelSec : 0.001f;
+  jConveyorPhase_ += dtSec / travelSec;
+  while (jConveyorPhase_ >= 1.0f) {
+    jConveyorPhase_ -= 1.0f;
   }
 
-  updateTorus(track, dtSec);
   updateContinuousSignal(track);
 
-  const auto ringColorAdd = signalColor(track);
-  const float r = ringColorAdd.r;
-  const float g = ringColorAdd.g;
-  const float b = ringColorAdd.b;
-  const float w = ringColorAdd.w;
-  const float memorySec = profile.ringColorMemorySec > 0.001f ? profile.ringColorMemorySec : 0.001f;
-  const float ringFade = expf(-dtSec / memorySec);
+  Profiles::RgbwFloat rightImpulse = {0.0f, 0.0f, 0.0f, 0.0f};
+  Profiles::RgbwFloat leftImpulse = {0.0f, 0.0f, 0.0f, 0.0f};
+  updateJDelayLines(track, dtSec, rightImpulse, leftImpulse);
+  updateFrontRingField(dtSec, rightImpulse, leftImpulse);
+  updateRearRingField(dtSec);
 
   for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     const float field = clamp01(profile.torusBaseField + frontField_[i]);
-    const float target = clamp01((field * track.continuity) + (track.charge * profile.torusInstantGain));
-    const float alpha = target > frontLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
-    frontLuma_[i] = frontLuma_[i] + ((target - frontLuma_[i]) * alpha);
-    const float visibleLuma = frontLuma_[i] > profile.idleFrontRingFloor ? frontLuma_[i] : profile.idleFrontRingFloor;
-
-    fadeColor(frontColor_[i], ringFade);
-    const float inject = target * dtSec * 1.6f;
-    addColor(frontColor_[i], ringColorAdd, inject);
-
-    output_.setFrontRingPixel(i,
-                              toByte(frontColor_[i].r * visibleLuma),
-                              toByte(frontColor_[i].g * visibleLuma),
-                              toByte(frontColor_[i].b * visibleLuma),
-                              toByte(frontColor_[i].w * field));
+    const float visible = field > profile.idleFrontRingFloor ? field : profile.idleFrontRingFloor;
+    output_.setFrontRingPixel(i, toByte(frontColor_[i].r * visible), toByte(frontColor_[i].g * visible),
+                              toByte(frontColor_[i].b * visible), toByte(frontColor_[i].w * visible));
   }
 
   for (uint16_t i = 0; i < kRearRingPixels; ++i) {
-    uint16_t source = i;
-    if (profile.rearRingMirror) {
-      source = kRearRingPixels - 1 - i;
-    }
-
-    float phasePosition = static_cast<float>(source) + (profile.rearRingPhaseOffset * kRearRingPixels);
-    while (phasePosition >= kRearRingPixels) {
-      phasePosition -= kRearRingPixels;
-    }
-
-    const uint16_t base = static_cast<uint16_t>(phasePosition);
-    const uint16_t next = (base + 1) % kRearRingPixels;
-    const float mix = phasePosition - static_cast<float>(base);
-    const float rearField = ((frontField_[base] * (1.0f - mix)) + (frontField_[next] * mix)) * profile.rearRingScale;
-
-    const float field = clamp01(profile.torusBaseField + rearField);
-    const float target = clamp01((field * track.continuity) + (track.charge * profile.torusInstantGain * profile.rearRingScale));
-    const float alpha = target > rearLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
-    rearLuma_[i] = rearLuma_[i] + ((target - rearLuma_[i]) * alpha);
-    const float visibleLuma = rearLuma_[i] > profile.idleRearRingFloor ? rearLuma_[i] : profile.idleRearRingFloor;
-
-    fadeColor(rearColor_[i], ringFade);
-    const float inject = target * dtSec * (1.6f * profile.rearRingScale);
-    addColor(rearColor_[i], ringColorAdd, inject);
-
-    output_.setRearRingPixel(i,
-                             toByte(rearColor_[i].r * visibleLuma),
-                             toByte(rearColor_[i].g * visibleLuma),
-                             toByte(rearColor_[i].b * visibleLuma),
-                             toByte(rearColor_[i].w * field));
+    const float field = clamp01(profile.torusBaseField + rearLuma_[i]);
+    const float visible = field > profile.idleRearRingFloor ? field : profile.idleRearRingFloor;
+    output_.setRearRingPixel(i, toByte(rearColor_[i].r * visible), toByte(rearColor_[i].g * visible),
+                             toByte(rearColor_[i].b * visible), toByte(rearColor_[i].w * visible));
   }
 
   for (uint16_t i = 0; i < kLeftJPixels; ++i) {
-    const float ingress = sampleIngress(i, kLeftJPixels, track, profile.leftJIngressReversed);
-    const float alpha = ingress > leftJLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
-    leftJLuma_[i] = leftJLuma_[i] + ((ingress - leftJLuma_[i]) * alpha);
-    const float visibleLuma = leftJLuma_[i] > profile.idleJFloor ? leftJLuma_[i] : profile.idleJFloor;
-    const float visibleIngress = ingress > profile.idleJFloor ? ingress : profile.idleJFloor;
-
-    output_.setLeftJPixel(i,
-                          toByte(r * visibleLuma),
-                          toByte(g * visibleLuma),
-                          toByte(b * visibleLuma),
-                          toByte(w * visibleIngress));
+    const float glow = profile.idleJFloor + profile.jBaseGlow;
+    output_.setLeftJPixel(i, toByte(leftJColor_[i].r + glow * 0.05f), toByte(leftJColor_[i].g + glow * 0.02f),
+                          toByte(leftJColor_[i].b + glow * 0.01f), toByte(leftJColor_[i].w + glow * 0.02f));
   }
 
   for (uint16_t i = 0; i < kRightJPixels; ++i) {
-    const float ingress = sampleIngress(i, kRightJPixels, track, profile.rightJIngressReversed);
-    const float alpha = ingress > rightJLuma_[i] ? profile.lumaRiseAlpha : profile.lumaFallAlpha;
-    rightJLuma_[i] = rightJLuma_[i] + ((ingress - rightJLuma_[i]) * alpha);
-    const float visibleLuma = rightJLuma_[i] > profile.idleJFloor ? rightJLuma_[i] : profile.idleJFloor;
-    const float visibleIngress = ingress > profile.idleJFloor ? ingress : profile.idleJFloor;
-
-    output_.setRightJPixel(i,
-                           toByte(r * visibleLuma),
-                           toByte(g * visibleLuma),
-                           toByte(b * visibleLuma),
-                           toByte(w * visibleIngress));
+    const float glow = profile.idleJFloor + profile.jBaseGlow;
+    output_.setRightJPixel(i, toByte(rightJColor_[i].r + glow * 0.05f), toByte(rightJColor_[i].g + glow * 0.02f),
+                           toByte(rightJColor_[i].b + glow * 0.01f), toByte(rightJColor_[i].w + glow * 0.02f));
   }
 
   output_.show();
 }
 
-void AnthuriumScene::updateTorus(const StableTrack& track, float dtSec) {
+void AnthuriumScene::updateJDelayLines(const StableTrack& track, float dtSec, Profiles::RgbwFloat& rightImpulse, Profiles::RgbwFloat& leftImpulse) {
   const auto& profile = Profiles::anthurium();
-
-  float tmp[kFrontRingPixels] = {0.0f};
-  const float decay = expf(-profile.torusDecayPerSecond * dtSec);
-  const float diffusion = profile.torusDiffusionPerSecond * dtSec;
-
-  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
-    const uint16_t left = (i == 0) ? (kFrontRingPixels - 1) : (i - 1);
-    const uint16_t right = (i + 1) % kFrontRingPixels;
-
-    float v = frontField_[i];
-    v += (frontField_[left] + frontField_[right] - (2.0f * frontField_[i])) * diffusion;
-    v *= decay;
-    tmp[i] = clamp01(v);
-  }
-
-  const float input = track.charge * track.continuity * profile.torusAccumulationGain * dtSec;
-
-  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
-    float da = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(profile.ingressA)));
-    float db = fabsf(static_cast<float>(static_cast<int16_t>(i) - static_cast<int16_t>(profile.ingressB)));
-    if (da > (kFrontRingPixels * 0.5f)) {
-      da = kFrontRingPixels - da;
-    }
-    if (db > (kFrontRingPixels * 0.5f)) {
-      db = kFrontRingPixels - db;
-    }
-
-    tmp[i] = clamp01(tmp[i] + (input * (polynomialKernel(da, profile.ingressSpread) +
-                                        polynomialKernel(db, profile.ingressSpread))));
-  }
-
-  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
-    frontField_[i] = tmp[i];
-  }
+  auto color = signalColor(track);
+  const float fade = expf(-dtSec / (profile.jColorMemorySec > 0.001f ? profile.jColorMemorySec : 0.001f));
+  const float adv = clamp01((dtSec / (profile.jConveyorTravelSec > 0.001f ? profile.jConveyorTravelSec : 0.001f)) * profile.jAdvectionStrength * kLeftJPixels);
+  const float diff = clamp01(profile.jDiffusionStrength * dtSec);
+  auto stepLine=[&](RgbwField* line, uint16_t n, Profiles::RgbwFloat& impulse){
+    RgbwField tmp[kLeftJPixels];
+    for(uint16_t i=0;i<n;++i){ uint16_t prev=i==0?0:i-1; tmp[i]=line[i]; tmp[i].r=clamp01((line[i].r*(1-adv))+(line[prev].r*adv)); tmp[i].g=clamp01((line[i].g*(1-adv))+(line[prev].g*adv)); tmp[i].b=clamp01((line[i].b*(1-adv))+(line[prev].b*adv)); tmp[i].w=clamp01((line[i].w*(1-adv))+(line[prev].w*adv));}
+    for(uint16_t i=0;i<n;++i){ uint16_t l=i==0?0:i-1,r=i+1<n?i+1:n-1; line[i].r=clamp01((tmp[i].r*(1-diff))+(((tmp[l].r+tmp[r].r)*0.5f)*diff)); line[i].g=clamp01((tmp[i].g*(1-diff))+(((tmp[l].g+tmp[r].g)*0.5f)*diff)); line[i].b=clamp01((tmp[i].b*(1-diff))+(((tmp[l].b+tmp[r].b)*0.5f)*diff)); line[i].w=clamp01((tmp[i].w*(1-diff))+(((tmp[l].w+tmp[r].w)*0.5f)*diff)); fadeColor(line[i],fade);}
+    addColor(line[0], color, track.ingressLevel * profile.jTipInjectionGain);
+    impulse = {line[n-1].r, line[n-1].g, line[n-1].b, line[n-1].w};
+  };
+  stepLine(rightJColor_, kRightJPixels, rightImpulse);
+  stepLine(leftJColor_, kLeftJPixels, leftImpulse);
 }
 
 void AnthuriumScene::updateContinuousSignal(const StableTrack& track) {
@@ -251,23 +171,39 @@ void AnthuriumScene::addColor(RgbwField& color, const Profiles::RgbwFloat& add, 
   color.w = clamp01(color.w + (add.w * amount));
 }
 
-float AnthuriumScene::sampleIngress(uint16_t pixel, uint16_t count, const StableTrack& track, bool reverseLogical) const {
-  const float denom = (count > 1) ? static_cast<float>(count - 1) : 1.0f;
-  const float linearPosition = static_cast<float>(pixel) / denom;
-  const float position = reverseLogical ? (1.0f - linearPosition) : linearPosition;
-  const float tipToEntry = 1.0f - position;
-
-  float delta = fabsf(tipToEntry - ingressPhase_);
-  if (delta > 0.5f) {
-    delta = 1.0f - delta;
-  }
-
+void AnthuriumScene::updateFrontRingField(float dtSec, const Profiles::RgbwFloat& rightImpulse, const Profiles::RgbwFloat& leftImpulse) {
   const auto& profile = Profiles::anthurium();
+  const float fade = expf(-dtSec / (profile.frontRingColorMemorySec > 0.001f ? profile.frontRingColorMemorySec : 0.001f));
+  const float diff = clamp01(profile.frontRingDiffusion * dtSec);
+  const uint8_t blurPasses = profile.frontRingBlurPasses > 0 ? profile.frontRingBlurPasses : 1;
+  for (uint8_t pass = 0; pass < blurPasses; ++pass) {
+    for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
+      uint16_t l = (i == 0) ? (kFrontRingPixels - 1) : (i - 1);
+      uint16_t r = (i + 1) % kFrontRingPixels;
+      frontField_[i] = clamp01((frontField_[i] * (1.0f - diff)) + (((frontField_[l] + frontField_[r]) * 0.5f) * diff));
+      fadeColor(frontColor_[i], fade);
+    }
+  }
+  const uint16_t injA = 7;
+  const uint16_t injB = 29;
+  addColor(frontColor_[injA], rightImpulse, profile.frontRingImpulseGain);
+  addColor(frontColor_[injB], leftImpulse, profile.frontRingImpulseGain);
+  frontField_[injA] = clamp01(frontField_[injA] + (rightImpulse.w * profile.frontRingImpulseGain));
+  frontField_[injB] = clamp01(frontField_[injB] + (leftImpulse.w * profile.frontRingImpulseGain));
+}
 
-  const float conveyor = polynomialKernel(delta, profile.ingressWidth);
-  const float floor = track.charge * profile.ingressFloor;
-  const float level = floor + (conveyor * track.ingressLevel);
-  return clamp01(level);
+void AnthuriumScene::updateRearRingField(float dtSec) {
+  const auto& profile = Profiles::anthurium();
+  const float fade = expf(-dtSec / (profile.rearRingMemorySec > 0.001f ? profile.rearRingMemorySec : 0.001f));
+  for (uint16_t i = 0; i < kRearRingPixels; ++i) {
+    const uint16_t a = i % kFrontRingPixels;
+    const uint16_t b = (i + 1) % kFrontRingPixels;
+    rearLuma_[i] = clamp01((frontField_[a] * 0.7f + frontField_[b] * 0.3f) * profile.rearRingWashScale);
+    rearColor_[i].r = clamp01((rearColor_[i].r * fade) + (frontColor_[a].r * 0.05f * profile.rearRingWashScale));
+    rearColor_[i].g = clamp01((rearColor_[i].g * fade) + (frontColor_[a].g * 0.05f * profile.rearRingWashScale));
+    rearColor_[i].b = clamp01((rearColor_[i].b * fade) + (frontColor_[a].b * 0.05f * profile.rearRingWashScale));
+    rearColor_[i].w = clamp01((rearColor_[i].w * fade) + (frontColor_[a].w * 0.05f * profile.rearRingWashScale));
+  }
 }
 
 float AnthuriumScene::clamp01(float v) {
@@ -282,12 +218,6 @@ float AnthuriumScene::clamp01(float v) {
 
 uint8_t AnthuriumScene::toByte(float v) {
   return static_cast<uint8_t>(clamp01(v) * 255.0f);
-}
-
-float AnthuriumScene::polynomialKernel(float distance, float width) {
-  const float safeWidth = width < 0.001f ? 0.001f : width;
-  const float x = clamp01(1.0f - (distance / safeWidth));
-  return x * x;
 }
 
 float AnthuriumScene::smoothToward(float current, float target, float riseAlpha, float fallAlpha) {
