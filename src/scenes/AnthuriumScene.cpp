@@ -14,9 +14,11 @@ void AnthuriumScene::begin() {
   for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     frontField_[i] = 0.0f;
     frontLuma_[i] = 0.0f;
+    frontColor_[i] = {0.0f, 0.0f, 0.0f, 0.0f};
   }
   for (uint16_t i = 0; i < kRearRingPixels; ++i) {
     rearLuma_[i] = 0.0f;
+    rearColor_[i] = {0.0f, 0.0f, 0.0f, 0.0f};
   }
   for (uint16_t i = 0; i < kLeftJPixels; ++i) {
     leftJLuma_[i] = 0.0f;
@@ -53,11 +55,13 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
 
   updateTorus(track, dtSec);
 
-  float r = 1.0f;
-  float g = 0.45f;
-  float b = 0.25f;
-  float w = 0.0f;
-  phaseColor(track, r, g, b, w);
+  const auto ringColorAdd = phaseColor(track);
+  const float r = ringColorAdd.r;
+  const float g = ringColorAdd.g;
+  const float b = ringColorAdd.b;
+  const float w = ringColorAdd.w;
+  const float memorySec = profile.ringColorMemorySec > 0.001f ? profile.ringColorMemorySec : 0.001f;
+  const float ringFade = expf(-dtSec / memorySec);
 
   for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     const float field = clamp01(profile.torusBaseField + frontField_[i]);
@@ -66,11 +70,15 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
     frontLuma_[i] = frontLuma_[i] + ((target - frontLuma_[i]) * alpha);
     const float visibleLuma = frontLuma_[i] > profile.idleFrontRingFloor ? frontLuma_[i] : profile.idleFrontRingFloor;
 
+    fadeColor(frontColor_[i], ringFade);
+    const float inject = target * dtSec * 1.6f;
+    addColor(frontColor_[i], ringColorAdd, inject);
+
     output_.setFrontRingPixel(i,
-                              toByte(r * visibleLuma),
-                              toByte(g * visibleLuma),
-                              toByte(b * visibleLuma),
-                              toByte(w * field));
+                              toByte(frontColor_[i].r * visibleLuma),
+                              toByte(frontColor_[i].g * visibleLuma),
+                              toByte(frontColor_[i].b * visibleLuma),
+                              toByte(frontColor_[i].w * field));
   }
 
   for (uint16_t i = 0; i < kRearRingPixels; ++i) {
@@ -95,11 +103,15 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
     rearLuma_[i] = rearLuma_[i] + ((target - rearLuma_[i]) * alpha);
     const float visibleLuma = rearLuma_[i] > profile.idleRearRingFloor ? rearLuma_[i] : profile.idleRearRingFloor;
 
+    fadeColor(rearColor_[i], ringFade);
+    const float inject = target * dtSec * (1.6f * profile.rearRingScale);
+    addColor(rearColor_[i], ringColorAdd, inject);
+
     output_.setRearRingPixel(i,
-                             toByte(r * visibleLuma),
-                             toByte(g * visibleLuma),
-                             toByte(b * visibleLuma),
-                             toByte(w * field));
+                             toByte(rearColor_[i].r * visibleLuma),
+                             toByte(rearColor_[i].g * visibleLuma),
+                             toByte(rearColor_[i].b * visibleLuma),
+                             toByte(rearColor_[i].w * field));
   }
 
   for (uint16_t i = 0; i < kLeftJPixels; ++i) {
@@ -171,7 +183,7 @@ void AnthuriumScene::updateTorus(const StableTrack& track, float dtSec) {
   }
 }
 
-void AnthuriumScene::phaseColor(const StableTrack& track, float& r, float& g, float& b, float& w) const {
+Profiles::RgbwFloat AnthuriumScene::phaseColor(const StableTrack& track) const {
   const auto& profile = Profiles::anthurium();
   const Profiles::RgbwFloat* color = &profile.idleColor;
 
@@ -191,10 +203,21 @@ void AnthuriumScene::phaseColor(const StableTrack& track, float& r, float& g, fl
       break;
   }
 
-  r = color->r;
-  g = color->g;
-  b = color->b;
-  w = color->w;
+  return *color;
+}
+
+void AnthuriumScene::fadeColor(RgbwField& color, float fade) {
+  color.r = clamp01(color.r * fade);
+  color.g = clamp01(color.g * fade);
+  color.b = clamp01(color.b * fade);
+  color.w = clamp01(color.w * fade);
+}
+
+void AnthuriumScene::addColor(RgbwField& color, const Profiles::RgbwFloat& add, float amount) {
+  color.r = clamp01(color.r + (add.r * amount));
+  color.g = clamp01(color.g + (add.g * amount));
+  color.b = clamp01(color.b + (add.b * amount));
+  color.w = clamp01(color.w + (add.w * amount));
 }
 
 float AnthuriumScene::sampleIngress(uint16_t pixel, uint16_t count, const StableTrack& track, bool reverseLogical) const {
