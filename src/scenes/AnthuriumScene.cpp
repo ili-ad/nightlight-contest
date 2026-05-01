@@ -3,6 +3,15 @@
 #include <Arduino.h>
 #include <math.h>
 
+// Production default: keep the Anthurium scene quiet.
+// Set these to 1 while bench-testing the native/projection comparison.
+#ifndef ANTHURIUM_ENABLE_SHADOW44_SUMMARY
+#define ANTHURIUM_ENABLE_SHADOW44_SUMMARY 0
+#endif
+#ifndef ANTHURIUM_ENABLE_SHADOW44_DUMPS
+#define ANTHURIUM_ENABLE_SHADOW44_DUMPS 0
+#endif
+
 namespace {
 // These constants are intentionally copied from the known-good bench sketch
 // bench/anthurium_lite_smoke_v3/anthurium_lite_smoke_v3.ino unless noted.
@@ -72,6 +81,59 @@ constexpr float kIdleSafetyNetWarmR = 0.026f;
 constexpr float kIdleSafetyNetWarmG = 0.013f;
 constexpr float kIdleSafetyNetWarmB = 0.004f;
 constexpr float kIdleSafetyNetWarmW = 0.004f;
+
+// Phase 3: V4-style J/spadix travelling-wave render. Keep these deliberately
+// separate from the front-ring projection/native comparison arrays so lighting
+// the physical J spans does not perturb the proven front-ring behavior.
+constexpr float kJIngressFloorFromCharge = 0.42f;
+constexpr float kJAmbientFloor = 0.090f;
+constexpr float kJOutputScale = 1.65f;
+constexpr float kJWhiteGain = 0.12f;
+constexpr float kJVisibleRgbGain = 2.4f;
+constexpr float kJVisibleWhiteGain = 0.75f;
+constexpr bool kLeftJTipAtHighIndex = false;
+constexpr bool kRightJTipAtHighIndex = false;
+constexpr float kLeftJPhaseOffset = 0.00f;
+constexpr float kRightJPhaseOffset = 0.035f;
+
+// Phase 4: render the V4 front-ring reservoir language onto the physical
+// RearRing as a soft wall-wash. These constants intentionally borrow the
+// V4 front-reservoir plumbing, but the drive color is crossfaded more slowly
+// so the wall does not snap from red to blue.
+constexpr float kRearWallColorCrossfadeSec = 1.55f;
+constexpr float kRearWallClearSeconds = 5.2f;
+constexpr float kRearWallColorClearSeconds = 4.4f;
+constexpr float kRearWallDiffusionPerSecond = 0.60f;
+constexpr float kRearWallColorDiffusionPerSecond = 0.70f;
+constexpr float kRearWallInjectionGain = 0.35f;
+constexpr float kRearWallInstantGain = 0.030f;
+constexpr float kRearWallBaseFieldLevel = 0.060f;
+constexpr float kRearWallIngressSpreadPixels = 13.5f;
+constexpr float kRearWallOutputScale = 0.92f;
+constexpr float kRearWallWhiteGain = 0.080f;
+constexpr float kRearWallMoodWashGain = 0.020f;
+constexpr float kRearWallMaxPixelAddPerFrame = 0.010f;
+constexpr float kRearWallColorFlushPerAdd = 1.65f;
+constexpr float kRearWallAnchorA = 43.5f;
+constexpr float kRearWallAnchorB = 21.5f;
+constexpr bool kRearWallReverseOutput = true;
+constexpr float kRearWallIdleRgbLevel = 0.0025f;
+constexpr float kRearWallIdleWhiteLevel = 0.0035f;
+
+// Render-only rear dropout safety net. This mirrors the front-ring net: it is
+// a separate low warm shimmer that fades in only when the rear reservoir/mood
+// output has nearly disappeared. It never feeds reservoir memory, so it cannot
+// create the bathtub/whiteout failure mode.
+constexpr float kRearIdleSafetyNetFadeInSec = 2.3f;
+constexpr float kRearIdleSafetyNetFadeOutSec = 1.05f;
+constexpr float kRearIdleSafetyNetDarkMean = 0.010f;
+constexpr float kRearIdleSafetyNetFullMean = 0.0025f;
+constexpr float kRearIdleSafetyNetWarmR = 0.018f;
+constexpr float kRearIdleSafetyNetWarmG = 0.010f;
+constexpr float kRearIdleSafetyNetWarmB = 0.004f;
+constexpr float kRearIdleSafetyNetWarmW = 0.004f;
+constexpr float kRearWallVisibleRgbGain = 2.05f;
+constexpr float kRearWallVisibleWhiteGain = 0.70f;
 }  // namespace
 
 AnthuriumScene::AnthuriumScene(PixelOutput& output) : output_(output) {}
@@ -106,6 +168,20 @@ void AnthuriumScene::begin() {
   for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     nativeFrontBrightness_[i] = 0.0f;
   }
+  for (uint16_t i = 0; i < kLeftJPixels; ++i) {
+    physicalLeftBrightness_[i] = 0.0f;
+  }
+  for (uint16_t i = 0; i < kRightJPixels; ++i) {
+    physicalRightBrightness_[i] = 0.0f;
+  }
+  for (uint16_t i = 0; i < kRearRingPixels; ++i) {
+    rearReservoirCharge_[i] = 0.0f;
+    rearReservoirColor_[i] = makeColor();
+    rearReservoirBrightness_[i] = 0.0f;
+  }
+  rearDriveColor_ = currentSceneColor(0.0f);
+  rearDriveWhite_ = 0.0f;
+  rearIdleSafetyNetLevel_ = 0.0f;
   lastCompareLogMs_ = 0;
   lastCompareDumpMs_ = 0;
   idleSafetyNetLevel_ = 0.0f;
@@ -128,8 +204,11 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
   updateMotionSignal(track, dtSec);
   updateSmoothedScene(track, dtSec);
   updateTorus(dtSec);
+  updateRearDriveColor(dtSec);
+  updateRearRingReservoir(dtSec);
   renderFrontRingCompat(dtSec, nowMs);
-  clearInactiveSpans();
+  renderJSpans(dtSec);
+  renderRearRing(dtSec, nowMs);
   output_.show();
 }
 
@@ -384,10 +463,211 @@ AnthuriumScene::ColorF AnthuriumScene::renderVirtualStamenPixel(uint16_t stamenP
   return c;
 }
 
-void AnthuriumScene::clearInactiveSpans() {
-  for (uint16_t i = 0; i < kRightJPixels; ++i) output_.setRightJPixel(i, 0, 0, 0, 0);
-  for (uint16_t i = 0; i < kLeftJPixels; ++i) output_.setLeftJPixel(i, 0, 0, 0, 0);
-  for (uint16_t i = 0; i < kRearRingPixels; ++i) output_.setRearRingPixel(i, 0, 0, 0, 0);
+void AnthuriumScene::renderJSpans(float dtSec) {
+  for (uint16_t i = 0; i < kRightJPixels; ++i) {
+    const ColorF color = renderJPixel(i, kRightJPixels, physicalRightBrightness_,
+                                      kRightJTipAtHighIndex, kRightJPhaseOffset, dtSec);
+    output_.setRightJPixel(i,
+                           toByte(color.r * kJVisibleRgbGain),
+                           toByte(color.g * kJVisibleRgbGain),
+                           toByte(color.b * kJVisibleRgbGain),
+                           toByte(color.w * kJVisibleWhiteGain));
+  }
+
+  for (uint16_t i = 0; i < kLeftJPixels; ++i) {
+    const ColorF color = renderJPixel(i, kLeftJPixels, physicalLeftBrightness_,
+                                      kLeftJTipAtHighIndex, kLeftJPhaseOffset, dtSec);
+    output_.setLeftJPixel(i,
+                          toByte(color.r * kJVisibleRgbGain),
+                          toByte(color.g * kJVisibleRgbGain),
+                          toByte(color.b * kJVisibleRgbGain),
+                          toByte(color.w * kJVisibleWhiteGain));
+  }
+}
+
+AnthuriumScene::ColorF AnthuriumScene::renderJPixel(uint16_t logicalPixel,
+                                                    uint16_t pixelCount,
+                                                    float* brightnessState,
+                                                    bool tipAtHighIndex,
+                                                    float phaseOffset,
+                                                    float dtSec) {
+  const float ingress = sampleJIngress(logicalPixel, pixelCount, tipAtHighIndex, phaseOffset);
+  const float targetBrightness = clamp01(
+      (ingress * (0.45f + (0.55f * smoothedIngressLevel_))) +
+      (kJAmbientFloor * maxf(0.25f, stableCharge_)));
+
+  float smoothed = brightnessState[logicalPixel] +
+                   ((targetBrightness - brightnessState[logicalPixel]) * 0.22f);
+  smoothed = applyDeadband(brightnessState[logicalPixel], smoothed, 0.015f);
+  brightnessState[logicalPixel] = applyBrightnessSlew(brightnessState[logicalPixel], smoothed, dtSec);
+
+  ColorF color = currentSceneColor(clamp01(brightnessState[logicalPixel] * kJOutputScale));
+  const float avg = (color.r + color.g + color.b) * 0.333f;
+  color.w = clamp01(color.w + (avg * kJWhiteGain));
+  return color;
+}
+
+void AnthuriumScene::updateRearDriveColor(float dtSec) {
+  // Crossfade the wall-wash drive in RGBW space. This deliberately avoids
+  // immediate hue snapping; red-to-blue transitions pass through a soft violet
+  // rather than flipping the whole rear wash in one frame.
+  ColorF target = currentSceneColor(clamp01(0.72f + (stableCharge_ * 0.28f)));
+  // Store color energy, not haze. White is kept as a slow render-only lift.
+  const float targetWhite = clamp01(target.w * 0.25f);
+  target.w = 0.0f;
+
+  const float a = emaAlphaApprox(dtSec, kRearWallColorCrossfadeSec);
+  rearDriveColor_ = lerpColor(rearDriveColor_, target, a);
+  rearDriveWhite_ = lerp(rearDriveWhite_, targetWhite, a);
+}
+
+void AnthuriumScene::updateRearRingReservoir(float dtSec) {
+  ColorF nextColor[kRearRingPixels];
+  float nextCharge[kRearRingPixels];
+  const float chargeDecay = decayApprox(dtSec, kRearWallClearSeconds);
+  const float colorDecay = decayApprox(dtSec, kRearWallColorClearSeconds);
+  const float chargeDiffusion = kRearWallDiffusionPerSecond * dtSec;
+  const float colorDiffusion = kRearWallColorDiffusionPerSecond * dtSec;
+
+  for (uint16_t i = 0; i < kRearRingPixels; ++i) {
+    const uint16_t left = (i == 0) ? (kRearRingPixels - 1) : (i - 1);
+    const uint16_t right = (i + 1) % kRearRingPixels;
+
+    float charge = rearReservoirCharge_[i];
+    charge += (rearReservoirCharge_[left] + rearReservoirCharge_[right] -
+               (2.0f * rearReservoirCharge_[i])) * chargeDiffusion;
+    nextCharge[i] = clamp01(charge * chargeDecay);
+
+    const ColorF c = rearReservoirColor_[i];
+    const ColorF l = rearReservoirColor_[left];
+    const ColorF r = rearReservoirColor_[right];
+    nextColor[i].r = clamp01((c.r + ((l.r + r.r - (2.0f * c.r)) * colorDiffusion)) * colorDecay);
+    nextColor[i].g = clamp01((c.g + ((l.g + r.g - (2.0f * c.g)) * colorDiffusion)) * colorDecay);
+    nextColor[i].b = clamp01((c.b + ((l.b + r.b - (2.0f * c.b)) * colorDiffusion)) * colorDecay);
+    nextColor[i].w = clamp01((c.w + ((l.w + r.w - (2.0f * c.w)) * colorDiffusion)) * colorDecay);
+  }
+
+  const float input = clamp01(stableCharge_) * dtSec * kRearWallInjectionGain;
+  if (input > 0.0f) {
+    for (uint16_t i = 0; i < kRearRingPixels; ++i) {
+      const float distA = circularDistance(static_cast<float>(i), kRearWallAnchorA, static_cast<float>(kRearRingPixels));
+      const float distB = circularDistance(static_cast<float>(i), kRearWallAnchorB, static_cast<float>(kRearRingPixels));
+      const float weight = clamp01(polynomialKernel(distA, kRearWallIngressSpreadPixels) +
+                                   polynomialKernel(distB, kRearWallIngressSpreadPixels));
+      if (weight <= 0.0f) continue;
+
+      const float add = minf(input * weight, kRearWallMaxPixelAddPerFrame);
+      const float flush = clamp01(add * kRearWallColorFlushPerAdd);
+      nextColor[i].r *= (1.0f - flush);
+      nextColor[i].g *= (1.0f - flush);
+      nextColor[i].b *= (1.0f - flush);
+      nextColor[i].w *= (1.0f - flush);
+
+      nextCharge[i] = clamp01(nextCharge[i] + add);
+      nextColor[i].r = clamp01(nextColor[i].r + (rearDriveColor_.r * add));
+      nextColor[i].g = clamp01(nextColor[i].g + (rearDriveColor_.g * add));
+      nextColor[i].b = clamp01(nextColor[i].b + (rearDriveColor_.b * add));
+      nextColor[i].w = clamp01(nextColor[i].w + (rearDriveColor_.w * add));
+    }
+  }
+
+  for (uint16_t i = 0; i < kRearRingPixels; ++i) {
+    rearReservoirCharge_[i] = nextCharge[i];
+    rearReservoirColor_[i] = nextColor[i];
+  }
+}
+
+void AnthuriumScene::renderRearRing(float dtSec, uint32_t nowMs) {
+  ColorF visible[kRearRingPixels];
+  float activeMean = 0.0f;
+
+  for (uint16_t i = 0; i < kRearRingPixels; ++i) {
+    const float field = clamp01(kRearWallBaseFieldLevel + rearReservoirCharge_[i]);
+    const float targetBrightness = clamp01((field * maxf(0.16f, stableCharge_)) +
+                                           (stableCharge_ * kRearWallInstantGain));
+    float smoothed = rearReservoirBrightness_[i] +
+                     ((targetBrightness - rearReservoirBrightness_[i]) * 0.16f);
+    smoothed = applyDeadband(rearReservoirBrightness_[i], smoothed, 0.012f);
+    rearReservoirBrightness_[i] = applyBrightnessSlew(rearReservoirBrightness_[i], smoothed, dtSec);
+
+    ColorF memory = scaleColor(rearReservoirColor_[i],
+                               kRearWallOutputScale * clamp01(0.30f + rearReservoirBrightness_[i]));
+    const float avg = (memory.r + memory.g + memory.b) * 0.333f;
+    memory.w = clamp01((memory.w * 0.25f) +
+                       (avg * kRearWallWhiteGain) +
+                       (rearReservoirCharge_[i] * 0.006f * kRearWallOutputScale) +
+                       (rearDriveWhite_ * 0.10f));
+
+    // Render-only mood wash. This keeps the wall wash alive in low-signal
+    // moments, but it does not feed memory and therefore cannot overfill the
+    // reservoir or desaturate old color into ghost-white.
+    ColorF mood = scaleColor(rearDriveColor_, kRearWallMoodWashGain * (0.20f + stableCharge_));
+    mood.w = rearDriveWhite_ * 0.10f * (0.25f + stableCharge_);
+
+    const ColorF active = makeColor(clamp01(mood.r + memory.r),
+                                    clamp01(mood.g + memory.g),
+                                    clamp01(mood.b + memory.b),
+                                    clamp01(mood.w + memory.w));
+    activeMean += colorLuma(active);
+
+    const ColorF idle = hsvColor(kStillHue, 0.035f, kRearWallIdleRgbLevel, kRearWallIdleWhiteLevel);
+    visible[i] = makeColor(clamp01(idle.r + active.r),
+                           clamp01(idle.g + active.g),
+                           clamp01(idle.b + active.b),
+                           clamp01(idle.w + active.w));
+  }
+
+  activeMean /= static_cast<float>(kRearRingPixels);
+  const float idleTarget = clamp01((kRearIdleSafetyNetDarkMean - activeMean) /
+                                   (kRearIdleSafetyNetDarkMean - kRearIdleSafetyNetFullMean));
+  const float idleTau = idleTarget > rearIdleSafetyNetLevel_ ?
+      kRearIdleSafetyNetFadeInSec : kRearIdleSafetyNetFadeOutSec;
+  rearIdleSafetyNetLevel_ += (idleTarget - rearIdleSafetyNetLevel_) * emaAlphaApprox(dtSec, idleTau);
+  rearIdleSafetyNetLevel_ = clamp01(rearIdleSafetyNetLevel_);
+
+  for (uint16_t i = 0; i < kRearRingPixels; ++i) {
+    ColorF out = visible[i];
+
+    if (rearIdleSafetyNetLevel_ > 0.001f) {
+      const float t = static_cast<float>(nowMs) * 0.0011f;
+      const float shimmerA = 0.5f + (0.5f * sinf(t + (static_cast<float>(i) * 0.61f)));
+      const float shimmerB = 0.5f + (0.5f * sinf((t * 0.43f) + (static_cast<float>(i) * 1.19f)));
+      const float shimmer = 0.60f + (0.25f * shimmerA) + (0.15f * shimmerB);
+      const float amount = rearIdleSafetyNetLevel_ * shimmer;
+      out.r = clamp01(out.r + (kRearIdleSafetyNetWarmR * amount));
+      out.g = clamp01(out.g + (kRearIdleSafetyNetWarmG * amount));
+      out.b = clamp01(out.b + (kRearIdleSafetyNetWarmB * amount));
+      out.w = clamp01(out.w + (kRearIdleSafetyNetWarmW * amount));
+    }
+
+    const uint16_t logical = kRearWallReverseOutput ?
+        static_cast<uint16_t>((kRearRingPixels - 1) - i) : i;
+    output_.setRearRingPixel(logical,
+                             toByte(out.r * kRearWallVisibleRgbGain),
+                             toByte(out.g * kRearWallVisibleRgbGain),
+                             toByte(out.b * kRearWallVisibleRgbGain),
+                             toByte(out.w * kRearWallVisibleWhiteGain));
+  }
+}
+
+float AnthuriumScene::sampleJIngress(uint16_t logicalPixel, uint16_t pixelCount,
+                                      bool tipAtHighIndex, float phaseOffset) const {
+  if (pixelCount == 0) return 0.0f;
+
+  const float denom = (pixelCount > 1) ? static_cast<float>(pixelCount - 1) : 1.0f;
+  const float pos = static_cast<float>(logicalPixel) / denom;
+  const float tipToEntry = tipAtHighIndex ? (1.0f - pos) : pos;
+
+  float phase = ingressConveyorPhase_ + phaseOffset;
+  while (phase < 0.0f) phase += 1.0f;
+  while (phase >= 1.0f) phase -= 1.0f;
+
+  float delta = absf(tipToEntry - phase);
+  if (delta > 0.5f) delta = 1.0f - delta;
+
+  const float moving = polynomialKernel(delta, kIngressConveyorWidth);
+  const float floor = stableCharge_ * kJIngressFloorFromCharge;
+  return clamp01(floor + (moving * smoothedIngressLevel_));
 }
 
 float AnthuriumScene::sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenCount) const {
@@ -421,6 +701,12 @@ float AnthuriumScene::sampleNativeFrontIngress(uint16_t logicalPixel) const {
 }
 
 void AnthuriumScene::maybeLogProjectionComparison(const ColorF* projected, const ColorF* native, uint32_t nowMs) {
+#if !ANTHURIUM_ENABLE_SHADOW44_SUMMARY
+  (void)projected;
+  (void)native;
+  (void)nowMs;
+  return;
+#else
   constexpr uint32_t kCompareLogMs = 1000;
   if (lastCompareLogMs_ != 0 && (nowMs - lastCompareLogMs_) < kCompareLogMs) return;
   lastCompareLogMs_ = nowMs;
@@ -486,9 +772,16 @@ void AnthuriumScene::maybeLogProjectionComparison(const ColorF* projected, const
   Serial.print(" nW="); Serial.print(nWhite, 3);
   Serial.print(" dMean="); Serial.print(diffMean, 3);
   Serial.print(" dMax="); Serial.println(diffMax, 3);
+#endif
 }
 
 void AnthuriumScene::maybeDumpProjectionArrays(const ColorF* projected, const ColorF* native, uint32_t nowMs) {
+#if !ANTHURIUM_ENABLE_SHADOW44_DUMPS
+  (void)projected;
+  (void)native;
+  (void)nowMs;
+  return;
+#else
   constexpr uint32_t kDumpMs = 5000;
   if (lastCompareDumpMs_ != 0 && (nowMs - lastCompareDumpMs_) < kDumpMs) return;
   lastCompareDumpMs_ = nowMs;
@@ -506,6 +799,7 @@ void AnthuriumScene::maybeDumpProjectionArrays(const ColorF* projected, const Co
     Serial.print(colorLuma(native[i]), 2);
   }
   Serial.println();
+#endif
 }
 
 float AnthuriumScene::sampleTorusField(uint16_t ringPixel) const {
@@ -514,6 +808,12 @@ float AnthuriumScene::sampleTorusField(uint16_t ringPixel) const {
 
 AnthuriumScene::ColorF AnthuriumScene::currentSceneColor(float brightnessScale) const {
   return hsvColor(displayHue_, displaySat_, displayRgbLevel_ * clamp01(brightnessScale), displayWhite_ * clamp01(brightnessScale));
+}
+
+AnthuriumScene::ColorF AnthuriumScene::currentRearSceneColor(float brightnessScale) const {
+  ColorF c = scaleColor(rearDriveColor_, clamp01(brightnessScale));
+  c.w = rearDriveWhite_ * clamp01(brightnessScale);
+  return c;
 }
 
 AnthuriumScene::ColorF AnthuriumScene::makeColor(float r, float g, float b, float w) {
@@ -599,6 +899,12 @@ float AnthuriumScene::polynomialKernel(float distance, float width) {
   const float safeWidth = (width < 0.001f) ? 0.001f : width;
   const float x = clamp01(1.0f - (distance / safeWidth));
   return x * x;
+}
+
+float AnthuriumScene::circularDistance(float a, float b, float count) {
+  float d = absf(a - b);
+  if (d > count * 0.5f) d = count - d;
+  return d;
 }
 
 float AnthuriumScene::clamp01(float value) {

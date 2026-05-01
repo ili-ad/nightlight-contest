@@ -37,7 +37,10 @@ struct C4001Profile {
   uint8_t i2cAddress;
   uint32_t pollIntervalMs;
   uint32_t holdMs;
+  uint32_t fadeMs;
   uint32_t initRetryMs;
+  uint32_t acceptedDroughtReinitMs;
+  uint32_t reinitCooldownMs;
   bool enableC4001AutoInit;
 
   float rangeNearM;

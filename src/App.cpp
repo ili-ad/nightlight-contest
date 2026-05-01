@@ -5,6 +5,11 @@
 #include "render/PixelOutput.h"
 #include "topology/LayoutMap.h"
 
+// Production default: quiet serial telemetry. Set to 1 for bench debugging.
+#ifndef NIGHTLIGHT_ENABLE_TELEMETRY
+#define NIGHTLIGHT_ENABLE_TELEMETRY 0
+#endif
+
 namespace {
 LayoutMap gLayoutMap;
 PixelOutput gPixelOutput(gLayoutMap);
@@ -120,6 +125,11 @@ void App::loop() {
 }
 
 void App::maybePrintAnthuriumTelemetry(const StableTrack& track, uint32_t nowMs) {
+#if !NIGHTLIGHT_ENABLE_TELEMETRY
+  (void)track;
+  (void)nowMs;
+  return;
+#else
   constexpr uint32_t kTelemetryIntervalMs = 500;
   if (lastAnthuriumTelemetryMs_ != 0 && (nowMs - lastAnthuriumTelemetryMs_ < kTelemetryIntervalMs)) {
     return;
@@ -142,6 +152,7 @@ void App::maybePrintAnthuriumTelemetry(const StableTrack& track, uint32_t nowMs)
   Serial.print(track.continuity, 2);
   Serial.print(" phase=");
   Serial.println(phaseName(track.phase));
+#endif
 }
 
 const char* App::modeName(Mode mode) {

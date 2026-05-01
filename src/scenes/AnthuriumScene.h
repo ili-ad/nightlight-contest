@@ -28,10 +28,10 @@ class AnthuriumScene {
   // Compatibility model for the known-good bench sketch:
   // bench/anthurium_lite_smoke_v3/anthurium_lite_smoke_v3.ino
   //
-  // Stage 6 renders the native 44-pixel FrontRing candidate directly, with
-  // a display-only brightness lift applied at output time. The old 32-pixel
-  // virtual stamen projection remains computed as a comparison reference in
-  // Serial logs, but it is no longer the visible LED output.
+  // The native 44-pixel FrontRing is the visible primary surface.
+  // Phase 3 also renders the physical RightJ/LeftJ spans with a V4-style
+  // travelling-wave shader. The old virtual 32-pixel stamen projection remains
+  // computed only as a comparison reference when shadow logging is enabled.
   static constexpr uint16_t kVirtualRingPixels = 45;
   static constexpr uint16_t kVirtualLeftStamenPixels = 16;
   static constexpr uint16_t kVirtualRightStamenPixels = 16;
@@ -44,17 +44,25 @@ class AnthuriumScene {
   void updateSmoothedScene(const StableTrack& track, float dtSec);
   void updateTorus(float dtSec);
   void renderFrontRingCompat(float dtSec, uint32_t nowMs);
-  void clearInactiveSpans();
+  void renderJSpans(float dtSec);
+  void updateRearDriveColor(float dtSec);
+  void updateRearRingReservoir(float dtSec);
+  void renderRearRing(float dtSec, uint32_t nowMs);
 
   ColorF renderVirtualRingPixel(uint16_t ringPixel, float dtSec);
   ColorF renderVirtualStamenPixel(uint16_t stamenPixel, uint16_t stamenCount,
                                   float* brightnessState, float dtSec);
   ColorF renderNativeFrontPixel(uint16_t logicalPixel, float dtSec);
+  ColorF renderJPixel(uint16_t logicalPixel, uint16_t pixelCount, float* brightnessState,
+                      bool tipAtHighIndex, float phaseOffset, float dtSec);
+  ColorF currentRearSceneColor(float brightnessScale) const;
 
   ColorF currentSceneColor(float brightnessScale) const;
   float sampleTorusField(uint16_t ringPixel) const;
   float sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenCount) const;
   float sampleNativeFrontIngress(uint16_t logicalPixel) const;
+  float sampleJIngress(uint16_t logicalPixel, uint16_t pixelCount,
+                       bool tipAtHighIndex, float phaseOffset) const;
   void maybeLogProjectionComparison(const ColorF* projected, const ColorF* native, uint32_t nowMs);
   void maybeDumpProjectionArrays(const ColorF* projected, const ColorF* native, uint32_t nowMs);
 
@@ -68,6 +76,7 @@ class AnthuriumScene {
   static float applyDeadband(float previous, float target, float threshold);
   static float applyBrightnessSlew(float previous, float target, float dtSec);
   static float polynomialKernel(float distance, float width);
+  static float circularDistance(float a, float b, float count);
   static float clamp01(float value);
   static float clampSigned(float value, float lo, float hi);
   static float lerp(float a, float b, float t);
@@ -100,6 +109,19 @@ class AnthuriumScene {
   float leftBrightness_[kVirtualLeftStamenPixels] = {0.0f};
   float rightBrightness_[kVirtualRightStamenPixels] = {0.0f};
   float nativeFrontBrightness_[kFrontRingPixels] = {0.0f};
+  float physicalLeftBrightness_[kLeftJPixels] = {0.0f};
+  float physicalRightBrightness_[kRightJPixels] = {0.0f};
+
+  // Phase 4: V4-style front-ring reservoir, rendered onto the physical
+  // RearRing as a calmer wall-wash layer. It is deliberately separate from
+  // the proven native FrontRing and from the J/spadix brightness state.
+  float rearReservoirCharge_[kRearRingPixels] = {0.0f};
+  ColorF rearReservoirColor_[kRearRingPixels] = {{0.0f, 0.0f, 0.0f, 0.0f}};
+  float rearReservoirBrightness_[kRearRingPixels] = {0.0f};
+  ColorF rearDriveColor_ = {0.0f, 0.0f, 0.0f, 0.0f};
+  float rearDriveWhite_ = 0.0f;
+  float rearIdleSafetyNetLevel_ = 0.0f;
+
   float idleSafetyNetLevel_ = 0.0f;
   uint32_t lastCompareLogMs_ = 0;
   uint32_t lastCompareDumpMs_ = 0;

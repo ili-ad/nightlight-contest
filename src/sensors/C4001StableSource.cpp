@@ -41,8 +41,11 @@ void C4001StableSource::begin() {
 
   sensorReady_ = false;
   manualInitRequested_ = false;
+  everHadAcceptedTarget_ = false;
+  droughtReinitRequested_ = false;
   lastPollMs_ = 0;
-  lastSeenMs_ = 0;
+  lastInitAttemptMs_ = 0;
+  lastAcceptedMs_ = 0;
   stableHasTarget_ = false;
   stableRangeM_ = 1.2f;
   stableSpeedMps_ = 0.0f;
@@ -55,32 +58,64 @@ void C4001StableSource::begin() {
 bool C4001StableSource::tryInit() {
   if (!initialized_) begin();
   if (!wireReady_) return false;
+
   lastInitAttemptMs_ = millis();
-  if (!gC4001.begin()) return false;
+  if (!gC4001.begin()) {
+    sensorReady_ = false;
+    return false;
+  }
+
   gC4001.setSensorMode(eSpeedMode);
   gC4001.setDetectThres(11, 1200, 10);
   gC4001.setFrettingDetection(eON);
   sensorReady_ = true;
+  lastPollMs_ = 0;
   return true;
 }
 
 void C4001StableSource::service(uint32_t nowMs) {
   if (!initialized_) begin();
 
+  const auto& profile = Profiles::c4001();
+  const bool retryElapsed =
+      lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.initRetryMs;
+  const bool reinitCooldownElapsed =
+      lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.reinitCooldownMs;
+
   bool shouldAttempt = manualInitRequested_;
-  if (!sensorReady_ && !shouldAttempt) {
-    const auto& profile = Profiles::c4001();
-    if (lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.initRetryMs) {
+
+  if (profile.enableC4001AutoInit) {
+    if (!sensorReady_ && retryElapsed) {
+      shouldAttempt = true;
+    } else if (droughtReinitRequested_ && reinitCooldownElapsed) {
       shouldAttempt = true;
     }
   }
 
   if (!shouldAttempt) return;
+
+  const bool manualAttempt = manualInitRequested_;
+  const bool droughtAttempt = droughtReinitRequested_ && sensorReady_;
   manualInitRequested_ = false;
+  droughtReinitRequested_ = false;
+
   const bool wasReady = sensorReady_;
   sensorReady_ = tryInit();
-  if (sensorReady_ && !wasReady) {
-    Serial.println("event=c4001_init_online");
+
+  if (sensorReady_) {
+    if (droughtAttempt) {
+      Serial.println("event=c4001_reinit_after_dropout");
+    } else if (!wasReady) {
+      Serial.println("event=c4001_init_online");
+    } else if (manualAttempt) {
+      Serial.println("event=c4001_manual_reinit");
+    }
+  } else {
+    if (droughtAttempt) {
+      Serial.println("warn=c4001_reinit_after_dropout_failed");
+    } else if (manualAttempt) {
+      Serial.println("warn=c4001_manual_init_failed");
+    }
   }
 }
 
@@ -91,29 +126,21 @@ void C4001StableSource::requestManualInit() {
 
 StableTrack C4001StableSource::read(uint32_t nowMs) {
   const auto& profile = Profiles::c4001();
-  if (!initialized_ || !sensorReady_) {
-    StableTrack t;
-    t.online = false;
-    t.hasTarget = false;
-    t.rangeM = stableRangeM_;
-    t.speedMps = 0.0f;
-    t.charge = 0.0f;
-    t.ingressLevel = 0.0f;
-    t.continuity = 0.0f;
-    t.phase = StableTrack::MotionPhase::None;
-    return t;
+  if (!initialized_) {
+    begin();
   }
+
+  // If the sensor is offline, keep any remembered accepted target in hold/fade
+  // instead of hard-zeroing immediately. This keeps the scene alive while the
+  // service path retries the C4001 after render.
+  if (!sensorReady_) {
+    noteNoAcceptedTarget(nowMs);
+    updateSmoothedSignals(stableHasTarget_);
+    return currentTrack();
+  }
+
   if (lastPollMs_ != 0 && (nowMs - lastPollMs_) < profile.pollIntervalMs) {
-    StableTrack t;
-    t.online = sensorReady_;
-    t.hasTarget = stableHasTarget_;
-    t.rangeM = stableRangeM_;
-    t.speedMps = stableSpeedMps_;
-    t.charge = smoothedCharge_;
-    t.ingressLevel = smoothedIngress_;
-    t.continuity = continuity_;
-    t.phase = phase_;
-    return t;
+    return currentTrack();
   }
   lastPollMs_ = nowMs;
 
@@ -121,63 +148,118 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   float rawRangeM = stableRangeM_;
   float rawSpeedMps = 0.0f;
 
-  if (sensorReady_) {
-    const int targetNumber = gC4001.getTargetNumber();
-    const float sensedRange = gC4001.getTargetRange();
-    const float sensedSpeed = gC4001.getTargetSpeed();
-    (void)gC4001.getTargetEnergy();
-    if (targetNumber > 0 &&
-        sensedRange >= profile.rangeNearM &&
-        sensedRange <= profile.rangeFarM &&
-        fabsf(sensedSpeed) <= kMaxAcceptedSpeedMps) {
-      accepted = true;
-      rawRangeM = sensedRange;
-      rawSpeedMps = sensedSpeed;
-    }
+  const int targetNumber = gC4001.getTargetNumber();
+  const float sensedRange = gC4001.getTargetRange();
+  const float sensedSpeed = gC4001.getTargetSpeed();
+  // Energy has shown unstable / overflow-looking values in logs. Keep reading it
+  // to match the bench sketch's sampling cadence, but do not use it for charge.
+  (void)gC4001.getTargetEnergy();
+
+  if (targetNumber > 0 &&
+      sensedRange >= profile.rangeNearM &&
+      sensedRange <= profile.rangeFarM &&
+      fabsf(sensedSpeed) <= kMaxAcceptedSpeedMps) {
+    accepted = true;
+    rawRangeM = sensedRange;
+    rawSpeedMps = sensedSpeed;
   }
 
   if (accepted) {
-    if (!stableHasTarget_ && lastSeenMs_ != 0) {
+    if (!stableHasTarget_ && everHadAcceptedTarget_) {
       Serial.println("event=c4001_read_resume");
     }
+
     stableHasTarget_ = true;
-    lastSeenMs_ = nowMs;
+    everHadAcceptedTarget_ = true;
+    droughtReinitRequested_ = false;
+    lastAcceptedMs_ = nowMs;
     stableRangeM_ = rawRangeM;
     stableSpeedMps_ = smooth(stableSpeedMps_, rawSpeedMps, profile.speedAlpha);
     continuity_ = 1.0f;
-  } else if (stableHasTarget_) {
-    const uint32_t ageMs = nowMs - lastSeenMs_;
+  } else {
+    noteNoAcceptedTarget(nowMs);
+    maybeRequestDroughtReinit(nowMs);
+  }
+
+  updateSmoothedSignals(stableHasTarget_);
+  return currentTrack();
+}
+
+void C4001StableSource::noteNoAcceptedTarget(uint32_t nowMs) {
+  const auto& profile = Profiles::c4001();
+
+  if (stableHasTarget_ && lastAcceptedMs_ != 0) {
+    const uint32_t ageMs = nowMs - lastAcceptedMs_;
     if (ageMs <= profile.holdMs) {
       continuity_ = 1.0f;
       stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, profile.speedDecayAlpha);
-    } else if (ageMs >= (profile.holdMs + 1500u)) {
-      stableHasTarget_ = false;
-      continuity_ = 0.0f;
-      stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, profile.speedDecayAlpha);
-    } else {
-      const float t = float(ageMs - profile.holdMs) / 1500.0f;
+      return;
+    }
+
+    const uint32_t fadeEndMs = profile.holdMs + profile.fadeMs;
+    if (ageMs < fadeEndMs) {
+      const float t = float(ageMs - profile.holdMs) /
+                      float(profile.fadeMs > 0 ? profile.fadeMs : 1);
       continuity_ = clamp01(1.0f - t);
       stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, profile.speedDecayAlpha);
+      return;
     }
-  } else {
-    continuity_ = 0.0f;
-    stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, profile.speedDecayAlpha);
   }
 
-  const float targetCharge = stableHasTarget_ ? chargeFromRange(stableRangeM_, profile) * continuity_ : 0.0f;
-  smoothedCharge_ = smooth(smoothedCharge_, targetCharge, stableHasTarget_ ? profile.chargeRiseAlpha : profile.chargeFallAlpha);
+  stableHasTarget_ = false;
+  continuity_ = 0.0f;
+  stableSpeedMps_ = smooth(stableSpeedMps_, 0.0f, profile.speedDecayAlpha);
+}
+
+void C4001StableSource::maybeRequestDroughtReinit(uint32_t nowMs) {
+  const auto& profile = Profiles::c4001();
+
+  if (!sensorReady_ ||
+      !profile.enableC4001AutoInit ||
+      !everHadAcceptedTarget_ ||
+      lastAcceptedMs_ == 0) {
+    return;
+  }
+
+  const bool droughtElapsed = (nowMs - lastAcceptedMs_) >= profile.acceptedDroughtReinitMs;
+  const bool cooldownElapsed =
+      lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.reinitCooldownMs;
+
+  if (droughtElapsed && cooldownElapsed) {
+    droughtReinitRequested_ = true;
+  }
+}
+
+void C4001StableSource::updateSmoothedSignals(bool hasEffectiveTarget) {
+  const auto& profile = Profiles::c4001();
+
+  const float targetCharge =
+      hasEffectiveTarget ? chargeFromRange(stableRangeM_, profile) * continuity_ : 0.0f;
+  smoothedCharge_ = smooth(smoothedCharge_, targetCharge,
+                           hasEffectiveTarget ? profile.chargeRiseAlpha : profile.chargeFallAlpha);
+
   const float motion = clamp01(fabsf(stableSpeedMps_) / 0.35f);
-  const float ingressTarget = clamp01((motion * 0.78f) + (smoothedCharge_ * 0.26f));
-  smoothedIngress_ = smooth(smoothedIngress_, ingressTarget, stableHasTarget_ ? profile.ingressRiseAlpha : profile.ingressFallAlpha);
+  const float ingressTarget =
+      hasEffectiveTarget ? clamp01((motion * 0.78f) + (smoothedCharge_ * 0.26f)) : 0.0f;
+  smoothedIngress_ = smooth(smoothedIngress_, ingressTarget,
+                            hasEffectiveTarget ? profile.ingressRiseAlpha
+                                               : profile.ingressFallAlpha);
 
-  if (!stableHasTarget_ || continuity_ <= 0.001f) phase_ = StableTrack::MotionPhase::None;
-  else if (fabsf(stableSpeedMps_) <= profile.stillSpeedMps) phase_ = StableTrack::MotionPhase::Still;
-  else if (stableSpeedMps_ < 0.0f) phase_ = StableTrack::MotionPhase::Approach;
-  else phase_ = StableTrack::MotionPhase::Retreat;
+  if (!hasEffectiveTarget || continuity_ <= 0.001f) {
+    phase_ = StableTrack::MotionPhase::None;
+  } else if (fabsf(stableSpeedMps_) <= profile.stillSpeedMps) {
+    phase_ = StableTrack::MotionPhase::Still;
+  } else if (stableSpeedMps_ < 0.0f) {
+    phase_ = StableTrack::MotionPhase::Approach;
+  } else {
+    phase_ = StableTrack::MotionPhase::Retreat;
+  }
+}
 
+StableTrack C4001StableSource::currentTrack() const {
   StableTrack t;
   t.online = sensorReady_;
-  t.hasTarget = stableHasTarget_;
+  t.hasTarget = stableHasTarget_ && continuity_ > 0.001f;
   t.rangeM = stableRangeM_;
   t.speedMps = stableSpeedMps_;
   t.charge = smoothedCharge_;
