@@ -109,10 +109,10 @@ constexpr StartupProfile kStartupProfile = {
 };
 
 constexpr NightlightProfile kNightlightProfile = {
-    18,       // baseR
-    7,        // baseG
-    1,        // baseB
-    4,        // baseW
+    30,       // baseR: warm amber-white, less pumpkin than pure orange
+    12,       // baseG
+    2,        // baseB
+    22,       // baseW: add light output without relying on oversaturated RGB
 
     0.85f,    // jScale
     1.00f,    // frontRingScale

@@ -57,12 +57,12 @@ constexpr float kIdleSafetyNetFadeOutSec = 0.85f;
 // The prior threshold was below the ring's visually-black luma range. Logs show
 // all pixels can read inactive while mean luma is still around 0.008-0.010, so
 // fade the net in progressively before the computed ring reaches absolute zero.
-constexpr float kIdleSafetyNetDarkMean = 0.010f;
-constexpr float kIdleSafetyNetFullMean = 0.0025f;
-constexpr float kIdleSafetyNetWarmR = 0.026f;
-constexpr float kIdleSafetyNetWarmG = 0.013f;
-constexpr float kIdleSafetyNetWarmB = 0.004f;
-constexpr float kIdleSafetyNetWarmW = 0.004f;
+constexpr float kIdleSafetyNetDarkMean = 0.020f;
+constexpr float kIdleSafetyNetFullMean = 0.006f;
+constexpr float kIdleSafetyNetWarmR = 0.035f;
+constexpr float kIdleSafetyNetWarmG = 0.018f;
+constexpr float kIdleSafetyNetWarmB = 0.006f;
+constexpr float kIdleSafetyNetWarmW = 0.010f;
 
 // Phase 3: V4-style J/spadix travelling-wave render. Keep these deliberately
 // separate from the front-ring native brightness array so lighting
@@ -73,10 +73,10 @@ constexpr float kJOutputScale = 1.65f;
 constexpr float kJWhiteGain = 0.12f;
 constexpr float kJVisibleRgbGain = 2.4f;
 constexpr float kJVisibleWhiteGain = 0.75f;
-constexpr float kJIdleSafetyNetWarmR = 0.018f;
-constexpr float kJIdleSafetyNetWarmG = 0.009f;
-constexpr float kJIdleSafetyNetWarmB = 0.003f;
-constexpr float kJIdleSafetyNetWarmW = 0.003f;
+constexpr float kJIdleSafetyNetWarmR = 0.024f;
+constexpr float kJIdleSafetyNetWarmG = 0.012f;
+constexpr float kJIdleSafetyNetWarmB = 0.004f;
+constexpr float kJIdleSafetyNetWarmW = 0.010f;
 constexpr bool kLeftJTipAtHighIndex = false;
 constexpr bool kRightJTipAtHighIndex = false;
 constexpr float kLeftJPhaseOffset = 0.00f;
@@ -117,14 +117,33 @@ constexpr float kRearWallIdleWhiteLevel = 0.0035f;
 // create the bathtub/whiteout failure mode.
 constexpr float kRearIdleSafetyNetFadeInSec = 2.3f;
 constexpr float kRearIdleSafetyNetFadeOutSec = 1.05f;
-constexpr float kRearIdleSafetyNetDarkMean = 0.010f;
-constexpr float kRearIdleSafetyNetFullMean = 0.0025f;
-constexpr float kRearIdleSafetyNetWarmR = 0.026f;
-constexpr float kRearIdleSafetyNetWarmG = 0.013f;
-constexpr float kRearIdleSafetyNetWarmB = 0.004f;
-constexpr float kRearIdleSafetyNetWarmW = 0.004f;
+constexpr float kRearIdleSafetyNetDarkMean = 0.020f;
+constexpr float kRearIdleSafetyNetFullMean = 0.006f;
+constexpr float kRearIdleSafetyNetWarmR = 0.032f;
+constexpr float kRearIdleSafetyNetWarmG = 0.016f;
+constexpr float kRearIdleSafetyNetWarmB = 0.006f;
+constexpr float kRearIdleSafetyNetWarmW = 0.010f;
 constexpr float kRearWallVisibleRgbGain = 2.05f;
 constexpr float kRearWallVisibleWhiteGain = 0.70f;
+
+
+// Absolute render-only minimums for Anthurium mode. These are deliberately tiny
+// and are applied after the safety-net logic so Off remains the only truly black
+// mode. Values are chosen to survive the downstream PixelOutput global limiter
+// by about one PWM count on RGBW, preventing a visually dead sculpture when the
+// radar is quiet or between accepted targets.
+constexpr float kFrontMinR = 0.015f;
+constexpr float kFrontMinG = 0.006f;
+constexpr float kFrontMinB = 0.002f;
+constexpr float kFrontMinW = 0.040f;
+constexpr float kRearMinR = 0.018f;
+constexpr float kRearMinG = 0.008f;
+constexpr float kRearMinB = 0.003f;
+constexpr float kRearMinW = 0.045f;
+constexpr float kJMinR = 0.014f;
+constexpr float kJMinG = 0.006f;
+constexpr float kJMinB = 0.002f;
+constexpr float kJMinW = 0.038f;
 }  // namespace
 
 AnthuriumScene::AnthuriumScene(PixelOutput& output) : output_(output) {}
@@ -308,6 +327,11 @@ void AnthuriumScene::renderFrontRingCompat(float dtSec, uint32_t nowMs) {
       visible.w = clamp01(visible.w + (kIdleSafetyNetWarmW * amount));
     }
 
+    visible.r = maxf(visible.r, kFrontMinR);
+    visible.g = maxf(visible.g, kFrontMinG);
+    visible.b = maxf(visible.b, kFrontMinB);
+    visible.w = maxf(visible.w, kFrontMinW);
+
     output_.setFrontRingPixel(physicalFrontPixel,
                               toByte(visible.r * kVisibleRgbGain),
                               toByte(visible.g * kVisibleRgbGain),
@@ -353,6 +377,10 @@ void AnthuriumScene::renderJSpans(float dtSec) {
     ColorF color = renderJPixel(i, kRightJPixels, physicalRightBrightness_,
                                 kRightJTipAtHighIndex, kRightJPhaseOffset, dtSec);
     color = applyJIdleNet(color, i);
+    color.r = maxf(color.r, kJMinR);
+    color.g = maxf(color.g, kJMinG);
+    color.b = maxf(color.b, kJMinB);
+    color.w = maxf(color.w, kJMinW);
     output_.setRightJPixel(i,
                            toByte(color.r * kJVisibleRgbGain),
                            toByte(color.g * kJVisibleRgbGain),
@@ -364,6 +392,10 @@ void AnthuriumScene::renderJSpans(float dtSec) {
     ColorF color = renderJPixel(i, kLeftJPixels, physicalLeftBrightness_,
                                 kLeftJTipAtHighIndex, kLeftJPhaseOffset, dtSec);
     color = applyJIdleNet(color, static_cast<uint16_t>(i + kRightJPixels));
+    color.r = maxf(color.r, kJMinR);
+    color.g = maxf(color.g, kJMinG);
+    color.b = maxf(color.b, kJMinB);
+    color.w = maxf(color.w, kJMinW);
     output_.setLeftJPixel(i,
                           toByte(color.r * kJVisibleRgbGain),
                           toByte(color.g * kJVisibleRgbGain),
@@ -530,6 +562,11 @@ void AnthuriumScene::renderRearRing(float dtSec, uint32_t nowMs) {
       out.b = clamp01(out.b + (kRearIdleSafetyNetWarmB * amount));
       out.w = clamp01(out.w + (kRearIdleSafetyNetWarmW * amount));
     }
+
+    out.r = maxf(out.r, kRearMinR);
+    out.g = maxf(out.g, kRearMinG);
+    out.b = maxf(out.b, kRearMinB);
+    out.w = maxf(out.w, kRearMinW);
 
     const uint16_t logical = kRearWallReverseOutput ?
         static_cast<uint16_t>((kRearRingPixels - 1) - i) : i;

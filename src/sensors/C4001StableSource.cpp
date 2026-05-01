@@ -10,10 +10,21 @@
 #define C4001_ENABLE_SERIAL_EVENTS 0
 #endif
 
+// Sparse overnight diagnostics for the hard-to-reproduce C4001 zombie state.
+// This is intentionally much lighter than full telemetry: one health line per
+// minute plus init attempt/result breadcrumbs. Set to 0 for the final silent build.
+#ifndef C4001_ENABLE_FAULT_DIAGNOSTICS
+#define C4001_ENABLE_FAULT_DIAGNOSTICS 1
+#endif
+
 namespace {
 constexpr uint8_t kC4001I2cAddress = 0x2B;
 constexpr float kMaxAcceptedSpeedMps = 2.60f;
 DFRobot_C4001_I2C gC4001(&Wire, kC4001I2cAddress);
+uint32_t gLastFaultDiagMs = 0;
+uint32_t gLastInitAttemptLogMs = 0;
+constexpr uint32_t kFaultDiagIntervalMs = 60000;
+constexpr uint32_t kInitAttemptLogIntervalMs = 60000;
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float span = profile.rangeFarM - profile.rangeNearM;
@@ -81,6 +92,23 @@ void C4001StableSource::service(uint32_t nowMs) {
   if (!initialized_) begin();
 
   const auto& profile = Profiles::c4001();
+#if C4001_ENABLE_FAULT_DIAGNOSTICS
+  if (gLastFaultDiagMs == 0 || (nowMs - gLastFaultDiagMs) >= kFaultDiagIntervalMs) {
+    gLastFaultDiagMs = nowMs;
+    Serial.print("radar_diag ready=");
+    Serial.print(sensorReady_ ? 1 : 0);
+    Serial.print(" target=");
+    Serial.print(stableHasTarget_ ? 1 : 0);
+    Serial.print(" ever=");
+    Serial.print(everHadAcceptedTarget_ ? 1 : 0);
+    Serial.print(" drought=");
+    Serial.print(droughtReinitRequested_ ? 1 : 0);
+    Serial.print(" ageAcceptedMs=");
+    Serial.print(lastAcceptedMs_ == 0 ? 0 : nowMs - lastAcceptedMs_);
+    Serial.print(" ageInitMs=");
+    Serial.println(lastInitAttemptMs_ == 0 ? 0 : nowMs - lastInitAttemptMs_);
+  }
+#endif
   const bool retryElapsed =
       lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.initRetryMs;
   const bool reinitCooldownElapsed =
@@ -103,8 +131,30 @@ void C4001StableSource::service(uint32_t nowMs) {
   manualInitRequested_ = false;
   droughtReinitRequested_ = false;
 
+  const bool logAttempt = manualAttempt || droughtAttempt ||
+      gLastInitAttemptLogMs == 0 || (nowMs - gLastInitAttemptLogMs) >= kInitAttemptLogIntervalMs;
+#if C4001_ENABLE_FAULT_DIAGNOSTICS
+  if (logAttempt) {
+    gLastInitAttemptLogMs = nowMs;
+    Serial.print("event=c4001_init_attempt reason=");
+    if (manualAttempt) Serial.print("manual");
+    else if (droughtAttempt) Serial.print("drought");
+    else Serial.print("offline");
+    Serial.print(" wasReady=");
+    Serial.println(sensorReady_ ? 1 : 0);
+    Serial.flush();
+  }
+#endif
+
   const bool wasReady = sensorReady_;
   sensorReady_ = tryInit();
+
+#if C4001_ENABLE_FAULT_DIAGNOSTICS
+  if (logAttempt) {
+    Serial.print("event=c4001_init_result ok=");
+    Serial.println(sensorReady_ ? 1 : 0);
+  }
+#endif
 
   if (sensorReady_) {
     if (droughtAttempt) {
