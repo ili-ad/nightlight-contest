@@ -21,19 +21,20 @@ class C4001StableSource {
   void updateSmoothedSignals(bool hasEffectiveTarget);
   void maybeRequestDroughtReinit(uint32_t nowMs);
   bool captureStatus(uint32_t nowMs);
-  bool statusHealthy() const;
+  bool statusBitsHealthy() const;
   bool probeSpeedMode();
   bool trySoftRecover();
   void printStatusTriple() const;
 
   bool initialized_ = false;
   bool wireReady_ = false;
-  bool sensorReady_ = false;
+  bool i2cOnline_ = false;
+  bool configured_ = false;
+  bool statusHealthy_ = false;
   bool manualInitRequested_ = false;
   bool everHadAcceptedTarget_ = false;
   bool droughtReinitRequested_ = false;
   bool configAttempted_ = false;
-  bool configApplied_ = false;
   uint8_t recoveryStage_ = 0;
   uint8_t lastRecoveryStep_ = 0;
   uint32_t lastPollMs_ = 0;

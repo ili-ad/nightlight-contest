@@ -58,12 +58,13 @@ void C4001StableSource::begin() {
     wireReady_ = true;
   }
 
-  sensorReady_ = false;
+  i2cOnline_ = false;
+  configured_ = false;
+  statusHealthy_ = false;
   manualInitRequested_ = false;
   everHadAcceptedTarget_ = false;
   droughtReinitRequested_ = false;
   configAttempted_ = false;
-  configApplied_ = false;
   recoveryStage_ = 0;
   lastRecoveryStep_ = 0;
   lastPollMs_ = 0;
@@ -97,10 +98,11 @@ bool C4001StableSource::captureStatus(uint32_t nowMs) {
   lastStatusMode_ = data.workMode;
   lastStatusInit_ = data.initStatus;
   lastStatusReadMs_ = nowMs;
-  return statusHealthy();
+  statusHealthy_ = i2cOnline_ && statusBitsHealthy();
+  return statusHealthy_;
 }
 
-bool C4001StableSource::statusHealthy() const {
+bool C4001StableSource::statusBitsHealthy() const {
   return lastStatusReadMs_ != 0 &&
          lastStatusWork_ == 1 &&
          lastStatusMode_ == eSpeedMode &&
@@ -109,13 +111,16 @@ bool C4001StableSource::statusHealthy() const {
 
 bool C4001StableSource::probeSpeedMode() {
   lastModeSetOk_ = false;
-  if (!gC4001.begin()) {
+  i2cOnline_ = gC4001.begin();
+  if (!i2cOnline_) {
+    statusHealthy_ = false;
     lastStatusReadMs_ = 0;
     return false;
   }
   lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
   captureStatus(millis());
-  return lastModeSetOk_ && statusHealthy();
+  statusHealthy_ = i2cOnline_ && lastModeSetOk_ && statusBitsHealthy();
+  return statusHealthy_;
 }
 
 void C4001StableSource::printStatusTriple() const {
@@ -140,9 +145,10 @@ bool C4001StableSource::tryInit() {
   recoveryStage_ = 0;
   lastRecoveryStep_ = 0;
   lastModeSetOk_ = false;
-  lastDetectThresOk_ = configApplied_;
-  if (!gC4001.begin()) {
-    sensorReady_ = false;
+  lastDetectThresOk_ = configured_;
+  i2cOnline_ = gC4001.begin();
+  if (!i2cOnline_) {
+    statusHealthy_ = false;
     lastStatusReadMs_ = 0;
     return false;
   }
@@ -158,11 +164,11 @@ bool C4001StableSource::tryInit() {
   // parameters internally, so drought recovery must not repeat them.
   if (!configAttempted_) {
     configAttempted_ = true;
-    if (lastModeSetOk_ && statusHealthy()) {
+    if (lastModeSetOk_ && statusBitsHealthy()) {
       lastDetectThresOk_ = gC4001.setDetectThres(11, 1200, 10);
       if (lastDetectThresOk_) {
         gC4001.setFrettingDetection(eON);
-        configApplied_ = true;
+        configured_ = true;
       }
       captureStatus(millis());
     } else {
@@ -170,9 +176,9 @@ bool C4001StableSource::tryInit() {
     }
   }
 
-  sensorReady_ = lastModeSetOk_ && statusHealthy();
+  statusHealthy_ = i2cOnline_ && lastModeSetOk_ && statusBitsHealthy();
   lastPollMs_ = 0;
-  return sensorReady_;
+  return statusHealthy_;
 }
 
 bool C4001StableSource::trySoftRecover() {
@@ -181,10 +187,11 @@ bool C4001StableSource::trySoftRecover() {
 
   lastInitAttemptMs_ = millis();
   lastModeSetOk_ = false;
-  lastDetectThresOk_ = configApplied_;
+  lastDetectThresOk_ = configured_;
 
-  if (!gC4001.begin()) {
-    sensorReady_ = false;
+  i2cOnline_ = gC4001.begin();
+  if (!i2cOnline_) {
+    statusHealthy_ = false;
     lastStatusReadMs_ = 0;
     return false;
   }
@@ -196,9 +203,9 @@ bool C4001StableSource::trySoftRecover() {
   if (stage == 0) {
     lastRecoveryStep_ = 1;
     captureStatus(millis());
-    if (statusHealthy()) {
+    if (i2cOnline_ && statusBitsHealthy()) {
       recoveryStage_ = 1;
-      sensorReady_ = true;
+      statusHealthy_ = true;
       lastPollMs_ = 0;
       return true;
     }
@@ -213,7 +220,8 @@ bool C4001StableSource::trySoftRecover() {
     delay(250);
     gC4001.setSensor(eResetSen);
     delay(750);
-    if (gC4001.begin()) {
+    i2cOnline_ = gC4001.begin();
+    if (i2cOnline_) {
       gC4001.setSensor(eStartSen);
       delay(500);
     }
@@ -231,9 +239,9 @@ bool C4001StableSource::trySoftRecover() {
     recoveryStage_ = 3;
   }
 
-  sensorReady_ = probeSpeedMode();
+  statusHealthy_ = probeSpeedMode();
   lastPollMs_ = 0;
-  return sensorReady_;
+  return statusHealthy_;
 }
 
 void C4001StableSource::service(uint32_t nowMs) {
@@ -243,9 +251,9 @@ void C4001StableSource::service(uint32_t nowMs) {
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (gLastFaultDiagMs == 0 || (nowMs - gLastFaultDiagMs) >= kFaultDiagIntervalMs) {
     gLastFaultDiagMs = nowMs;
-    if (sensorReady_) captureStatus(nowMs);
+    if (statusHealthy_) captureStatus(nowMs);
     Serial.print(F("radar_diag rdy="));
-    Serial.print(sensorReady_ ? 1 : 0);
+    Serial.print(statusHealthy_ ? 1 : 0);
     Serial.print(F(" st="));
     printStatusTriple();
     Serial.print(F(" init="));
@@ -290,7 +298,7 @@ void C4001StableSource::service(uint32_t nowMs) {
   bool shouldAttempt = manualInitRequested_;
 
   if (profile.enableC4001AutoInit) {
-    if (!sensorReady_ && retryElapsed) {
+    if (!statusHealthy_ && retryElapsed) {
       shouldAttempt = true;
     } else if (droughtReinitRequested_ && reinitCooldownElapsed) {
       shouldAttempt = true;
@@ -300,7 +308,7 @@ void C4001StableSource::service(uint32_t nowMs) {
   if (!shouldAttempt) return;
 
   const bool manualAttempt = manualInitRequested_;
-  const bool droughtAttempt = droughtReinitRequested_ && sensorReady_;
+  const bool droughtAttempt = droughtReinitRequested_ && statusHealthy_;
   manualInitRequested_ = false;
   droughtReinitRequested_ = false;
 
@@ -314,24 +322,24 @@ void C4001StableSource::service(uint32_t nowMs) {
     else if (droughtAttempt) Serial.print(F("drought"));
     else Serial.print(F("offline"));
     Serial.print(F(" wasReady="));
-    Serial.println(sensorReady_ ? 1 : 0);
+    Serial.println(statusHealthy_ ? 1 : 0);
     Serial.flush();
   }
 #endif
 
-  const bool wasReady = sensorReady_;
-  sensorReady_ = droughtAttempt ? trySoftRecover() : tryInit();
+  const bool wasReady = statusHealthy_;
+  statusHealthy_ = droughtAttempt ? trySoftRecover() : tryInit();
 
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (logAttempt) {
     if (droughtAttempt) {
       Serial.print(F("event=c4001_recover_result ok="));
-      Serial.print(sensorReady_ ? 1 : 0);
+      Serial.print(statusHealthy_ ? 1 : 0);
       Serial.print(F(" step="));
       Serial.print(lastRecoveryStep_);
     } else {
       Serial.print(F("event=c4001_init_result ok="));
-      Serial.print(sensorReady_ ? 1 : 0);
+      Serial.print(statusHealthy_ ? 1 : 0);
     }
     Serial.print(F(" modeOk="));
     Serial.print(lastModeSetOk_ ? 1 : 0);
@@ -343,7 +351,7 @@ void C4001StableSource::service(uint32_t nowMs) {
   }
 #endif
 
-  if (sensorReady_) {
+  if (statusHealthy_) {
     if (droughtAttempt) {
       #if C4001_ENABLE_SERIAL_EVENTS
       Serial.println("event=c4001_reinit_after_dropout");
@@ -384,7 +392,7 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   // If the sensor is offline, keep any remembered accepted target in hold/fade
   // instead of hard-zeroing immediately. This keeps the scene alive while the
   // service path retries the C4001 after render.
-  if (!sensorReady_) {
+  if (!statusHealthy_) {
     noteNoAcceptedTarget(nowMs);
     updateSmoothedSignals(stableHasTarget_);
     return currentTrack();
@@ -476,7 +484,7 @@ void C4001StableSource::noteNoAcceptedTarget(uint32_t nowMs) {
 void C4001StableSource::maybeRequestDroughtReinit(uint32_t nowMs) {
   const auto& profile = Profiles::c4001();
 
-  if (!sensorReady_ ||
+  if (!statusHealthy_ ||
       !profile.enableC4001AutoInit ||
       !everHadAcceptedTarget_ ||
       lastAcceptedMs_ == 0) {
@@ -520,7 +528,7 @@ void C4001StableSource::updateSmoothedSignals(bool hasEffectiveTarget) {
 
 StableTrack C4001StableSource::currentTrack() const {
   StableTrack t;
-  t.online = sensorReady_;
+  t.online = statusHealthy_;
   t.hasTarget = stableHasTarget_ && continuity_ > 0.001f;
   t.rangeM = stableRangeM_;
   t.speedMps = stableSpeedMps_;
