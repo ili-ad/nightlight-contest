@@ -5,7 +5,7 @@
 #include <DFRobot_C4001.h>
 
 // -----------------------------------------------------------------------------
-// Anthurium Lite Smoke v4.3
+// Anthurium Lite Smoke v4.8
 //
 // Bench sketch. Standalone. No app/scene framework required.
 //
@@ -14,13 +14,12 @@
 // - Motion is primarily derived from range delta, not blindly from raw speed.
 // - A shared scene envelope controls hue, charge, white haze, ingress level.
 // - J-shapes are old-style travelling wave shaders, not literal packet queues.
-// - Rings are reservoirs: per-pixel charge plus normalized hue memory.
-// - v4.3 makes ring injection field-led instead of two-node-led.
+// - Rings are reservoirs: v3-style additive color energy, diffusion, and decay.
+// - v4.7 adds sampled front-ring RGBW logging and a small 2-pixel clockwise anchor trim.
 //
 // v4 changes:
 // - Real-ish bench topology: front ring 44, rear ring 44, left J 12, right J 12.
 // - Two reservoirs: front is sharper, rear is softer/dimmer/wall-wash-like.
-// - Optional anchored plasma drift around the two ingress points.
 // - Static scratch buffers instead of large local reservoir arrays.
 //
 // Default strip order for the installed/bench Anthurium wiring:
@@ -91,7 +90,13 @@ constexpr float kRightJPhaseOffset = 0.035f;
 constexpr uint8_t kGlobalBrightness = 48;
 constexpr uint32_t kFrameMs = 16;       // ~60 fps target
 constexpr uint32_t kSensorPollMs = 60;  // C4001 path is slower than render path
-constexpr uint32_t kPrintMs = 160;
+constexpr uint32_t kPrintMs = 250;
+constexpr bool kRingColorDebug = true;
+constexpr bool kRingColorFullDump = false;
+constexpr bool kLogRearRingColors = false;
+constexpr uint32_t kRingSummaryPrintMs = 500;
+constexpr uint32_t kRingFullDumpPrintMs = 1000;
+constexpr uint8_t kRingSummarySampleStride = 4;
 constexpr bool kDebugSerial = true;
 
 // ---------------------------------------------------------------------------
@@ -115,7 +120,7 @@ constexpr uint16_t kDetectRangeThreshold = 11;
 constexpr uint16_t kDetectEnergyThreshold = 1200;
 constexpr uint16_t kDetectDelayThreshold = 10;
 constexpr float kEnergyReference = 1200.0f;
-constexpr float kEnergyChargeBlend = 0.16f;  // range still dominates charge
+constexpr float kEnergyChargeBlend = 0.06f;  // range dominates; energy is too spiky for reservoir fill
 
 // ---------------------------------------------------------------------------
 // Motion interpretation
@@ -142,45 +147,63 @@ constexpr float kIngressFloorFromCharge = 0.42f;
 constexpr float kStamenAmbientFloor = 0.090f;
 constexpr float kStamenOutputScale = 1.65f;
 
-// Front ring: sharper, more legible.
-constexpr float kFrontClearSeconds = 8.2f;
-constexpr float kFrontDiffusionPerSecond = 0.62f;
-constexpr float kFrontInjectionGain = 0.32f;
-constexpr float kFrontInstantGain = 0.010f;
-constexpr float kFrontBaseFieldLevel = 0.075f;
-constexpr float kFrontIngressSpreadPixels = 14.0f;
-constexpr float kFrontOutputScale = 1.18f;
-constexpr float kFrontWhiteGain = 0.035f;
+// Front ring: charge lingers for a few seconds; color drains a little faster
+// so new red/blue/green can overtake old memory instead of averaging to white.
+constexpr float kFrontClearSeconds = 5.2f;       // charge reservoir time constant
+constexpr float kFrontColorClearSeconds = 4.4f;  // chroma time constant
+constexpr float kFrontDiffusionPerSecond = 0.60f;
+constexpr float kFrontColorDiffusionPerSecond = 0.70f;
+constexpr float kFrontInjectionGain = 0.35f;
+constexpr float kFrontInstantGain = 0.030f;
+constexpr float kFrontBaseFieldLevel = 0.060f;
+constexpr float kFrontIngressSpreadPixels = 13.5f;  // broad enough to close the loop without adding fake inlets
+constexpr float kFrontOutputScale = 1.48f;
+constexpr float kFrontWhiteGain = 0.045f;
 
-// Rear ring: wider, slower, dimmer wall-wash memory.
-constexpr float kRearClearSeconds = 9.0f;
-constexpr float kRearDiffusionPerSecond = 0.70f;
-constexpr float kRearInjectionGain = 0.24f;
-constexpr float kRearInstantGain = 0.008f;
-constexpr float kRearBaseFieldLevel = 0.064f;
-constexpr float kRearIngressSpreadPixels = 16.0f;
-constexpr float kRearOutputScale = 0.90f;
-constexpr float kRearWhiteGain = 0.12f;
+// Rear ring: longer-memory and wider for wall wash. It is intentionally lazier
+// than the front, but still under budget.
+constexpr float kRearClearSeconds = 6.4f;
+constexpr float kRearColorClearSeconds = 5.4f;
+constexpr float kRearDiffusionPerSecond = 0.50f;
+constexpr float kRearColorDiffusionPerSecond = 0.56f;
+constexpr float kRearInjectionGain = 0.28f;
+constexpr float kRearInstantGain = 0.016f;
+constexpr float kRearBaseFieldLevel = 0.046f;
+constexpr float kRearIngressSpreadPixels = 8.5f;
+constexpr float kRearOutputScale = 0.94f;
+constexpr float kRearWhiteGain = 0.14f;
 constexpr float kRearHueSoftening = 0.10f;  // pull rear slightly toward still hue
 constexpr float kRearIngressOffsetPixels = 0.0f;
 constexpr bool kRearMirrorIngress = true;
 
-// v4.3 ring philosophy: the old ingress points are now only soft biases.
-// A low whole-field infusion prevents two white nodes from becoming the whole
-// story and lets the rings read as reservoirs rather than injection nozzles.
-constexpr float kFrontWholeFieldInjection = 0.34f;
-constexpr float kFrontAnchorInjection = 0.46f;
-constexpr float kRearWholeFieldInjection = 0.42f;
-constexpr float kRearAnchorInjection = 0.36f;
-constexpr float kRingColorAssimilation = 0.72f;
-constexpr float kRingMaxPixelAddPerFrame = 0.018f;
-constexpr float kFrontMoodWashGain = 0.034f;
-constexpr float kRearMoodWashGain = 0.042f;
+// v4.4 ring plumbing: memory is local dye, not a whole-ring faucet. The mood
+// wash below is render-only and cannot fill the reservoir. Incoming dye also
+// displaces a little stale dye locally, which prevents long red+green+blue
+// histories from becoming chalky white.
+constexpr float kRingMaxPixelAddPerFrame = 0.010f;
+constexpr float kRingColorFlushPerAdd = 1.65f;
+constexpr float kFrontMoodWashGain = 0.036f;
+constexpr float kRearMoodWashGain = 0.034f;
 
-// A ring-wide smoke shimmer restores the accidental v4 behavior where the rear
-// ring was receiving a mix of rear-reservoir memory and J-wave rendering because
-// of the old segment offset. This makes the loved "after pixel 68" behavior a
-// disabled in v4.2: this created a radar / choo-choo band on the rings.
+// Front-ring palette rescue. The reservoir is now behaving, but the log/photo
+// showed a long-lived pale green-yellow band that reads like a bug lamp. This
+// transform is render-only: it does not alter the stored reservoir, the
+// spadices, or blue/red/cyan motion colors. It catches only the yellow-green
+// RGB output band and bends it into a warm domestic white / amber-white.
+constexpr bool kEnableFrontBugLampRescue = true;
+constexpr float kBugLampRescueStrength = 0.90f;
+constexpr float kBugLampMinRedOverGreen = 0.45f;
+constexpr float kBugLampMaxRedOverGreen = 1.05f;
+constexpr float kBugLampMaxBlueOverGreen = 0.72f;
+constexpr float kBugLampMinVisible = 0.010f;
+constexpr float kWarmWhiteRescueGain = 1.12f;
+constexpr float kWarmWhiteRescueR = 1.00f;
+constexpr float kWarmWhiteRescueG = 0.52f;
+constexpr float kWarmWhiteRescueB = 0.14f;
+constexpr float kWarmWhiteRescueW = 0.72f;
+
+// Ring-wide travelling shimmer remains disabled. It produced the radar / choo-choo
+// band. Keep the rings as reservoirs for this pass.
 constexpr bool kEnableRingSurfaceWave = false;
 constexpr float kFrontSurfaceWaveGain = 0.00f;
 constexpr float kRearSurfaceWaveGain = 0.00f;
@@ -196,8 +219,8 @@ constexpr float kArrivalPulseWidth = 0.12f;
 
 // Ingress anchors on a 44-pixel logical ring. These are the v3 anchors adapted
 // from 45 -> 44: one near the start, one across the ring.
-constexpr float kLeftIngressAnchor = 2.0f;
-constexpr float kRightIngressAnchor = (kRingPixels * 0.5f) + 2.0f;
+constexpr float kLeftIngressAnchor = 0.0f;  // v4.7: 2 px clockwise trim from v4.6
+constexpr float kRightIngressAnchor = 22.0f; // opposite anchor, same trim
 
 // In v4.2 the ring ingress is pinned back to fixed v3-style anchors to restore
 // reservoir elegance before revisiting any Brownian behavior.
@@ -317,6 +340,13 @@ struct RingReservoir {
   float brightness[Config::kRingPixels];
 };
 
+struct Rgbw8 {
+  uint8_t r;
+  uint8_t g;
+  uint8_t b;
+  uint8_t w;
+};
+
 struct IngressCursor {
   float anchor;
   float offset;
@@ -332,6 +362,14 @@ SceneEnvelope gScene = {0.0f, 0.0f, 0.0f, Config::kStillHue, Config::kBaseSatura
 
 RingReservoir gFront;
 RingReservoir gRear;
+
+// Last rendered byte-level ring output. Logging this tells us what the viewer
+// actually sees after reservoir, mood wash, white haze, and brightness smoothing
+// are combined.
+Rgbw8 gFrontRendered[Config::kRingPixels];
+Rgbw8 gRearRendered[Config::kRingPixels];
+uint8_t gFrontYellowRescue[Config::kRingPixels];
+uint8_t gRearYellowRescue[Config::kRingPixels];
 
 // One reusable scratch pass for reservoir diffusion. This is intentionally
 // global rather than stack-local to keep Nano Every stack pressure low.
@@ -351,6 +389,8 @@ uint32_t gLastInitAttemptMs = 0;
 uint32_t gLastSensorPollMs = 0;
 uint32_t gLastFrameMs = 0;
 uint32_t gLastPrintMs = 0;
+uint32_t gLastRingSummaryPrintMs = 0;
+uint32_t gLastRingFullDumpPrintMs = 0;
 
 bool gHadMotionRangeSample = false;
 float gPrevMotionRangeM = 0.0f;
@@ -449,6 +489,15 @@ uint8_t toByte(float v) {
   return static_cast<uint8_t>(clamp01(v) * 255.0f);
 }
 
+Rgbw8 toRgbw8(const ColorF& c) {
+  Rgbw8 out;
+  out.r = toByte(c.r);
+  out.g = toByte(c.g);
+  out.b = toByte(c.b);
+  out.w = toByte(c.w);
+  return out;
+}
+
 float randomSignedUnit(uint16_t& state) {
   state = static_cast<uint16_t>((state * 2053u) + 13849u);
   const uint16_t bucket = state & 0x0FFFu;
@@ -532,6 +581,37 @@ ColorF currentSceneColor(float brightnessScale, bool rearSoftened) {
   }
 
   return hsvColor(hue, sat, rgb * brightnessScale, white * brightnessScale);
+}
+
+ColorF rescueBugLampYellow(const ColorF& c, float& rescueAmount) {
+  rescueAmount = 0.0f;
+  if (!Config::kEnableFrontBugLampRescue) return c;
+
+  const float r = c.r;
+  const float g = c.g;
+  const float b = c.b;
+  const float visible = maxf(r, maxf(g, b));
+  if (visible < Config::kBugLampMinVisible || g <= 0.001f) return c;
+
+  const float redOverGreen = r / g;
+  const bool redGreenBand =
+      redOverGreen >= Config::kBugLampMinRedOverGreen &&
+      redOverGreen <= Config::kBugLampMaxRedOverGreen;
+  const bool blueIsWeak = b <= (g * Config::kBugLampMaxBlueOverGreen);
+
+  // Do not touch true green, orange/red approach, blue/cyan retreat, or violet.
+  // This specifically catches the pale R+G / weak-B band seen in the logs.
+  if (!redGreenBand || !blueIsWeak) return c;
+
+  const float targetLevel = visible * Config::kWarmWhiteRescueGain;
+  const ColorF warmWhite = makeColor(
+      clamp01(targetLevel * Config::kWarmWhiteRescueR),
+      clamp01(targetLevel * Config::kWarmWhiteRescueG),
+      clamp01(targetLevel * Config::kWarmWhiteRescueB),
+      clamp01(targetLevel * Config::kWarmWhiteRescueW));
+
+  rescueAmount = Config::kBugLampRescueStrength;
+  return lerpColor(c, warmWhite, Config::kBugLampRescueStrength);
 }
 
 // -----------------------------------------------------------------------------
@@ -853,71 +933,44 @@ void clearReservoir(RingReservoir& reservoir) {
 void clearSceneState() {
   clearReservoir(gFront);
   clearReservoir(gRear);
+  for (uint16_t i = 0; i < Config::kRingPixels; ++i) {
+    gFrontRendered[i] = {0, 0, 0, 0};
+    gRearRendered[i] = {0, 0, 0, 0};
+  }
   for (uint16_t i = 0; i < Config::kLeftJPixels; ++i) gLeftBrightness[i] = 0.0f;
   for (uint16_t i = 0; i < Config::kRightJPixels; ++i) gRightBrightness[i] = 0.0f;
 }
 
-void updateReservoir(RingReservoir& reservoir, float dtSec, float clearSeconds,
-                     float diffusionPerSecond) {
-  const float decay = decayApprox(dtSec, clearSeconds);
-  const float diffusion = diffusionPerSecond * dtSec;
+void updateReservoir(RingReservoir& reservoir, float dtSec,
+                     float chargeClearSeconds, float colorClearSeconds,
+                     float chargeDiffusionPerSecond, float colorDiffusionPerSecond) {
+  const float chargeDecay = decayApprox(dtSec, chargeClearSeconds);
+  const float colorDecay = decayApprox(dtSec, colorClearSeconds);
+  const float chargeDiffusion = chargeDiffusionPerSecond * dtSec;
+  const float colorDiffusion = colorDiffusionPerSecond * dtSec;
 
-  // v4.3: reservoir.color is normalized chroma memory, not additive light
-  // energy. We diffuse color as charge-weighted energy and then divide by the
-  // diffused charge. This keeps repeated red/green/blue deposits from turning
-  // the two ingress pixels into white scars.
+  // v4.4: v3-style additive color-energy reservoir. Charge and color both
+  // diffuse and drain, but front color drains slightly faster than charge. That
+  // gives new hue authority while preserving a visible memory field.
   for (uint16_t i = 0; i < Config::kRingPixels; ++i) {
     const uint16_t left = (i == 0) ? (Config::kRingPixels - 1) : (i - 1);
     const uint16_t right = (i + 1) % Config::kRingPixels;
 
-    const float selfCharge = reservoir.charge[i];
-    const float leftCharge = reservoir.charge[left];
-    const float rightCharge = reservoir.charge[right];
-
-    float charge = selfCharge;
-    charge += (leftCharge + rightCharge - (2.0f * selfCharge)) * diffusion;
-    charge *= decay;
+    float charge = reservoir.charge[i];
+    charge += (reservoir.charge[left] + reservoir.charge[right] -
+               (2.0f * reservoir.charge[i])) * chargeDiffusion;
+    charge *= chargeDecay;
     gScratchCharge[i] = clamp01(charge);
 
     const ColorF c = reservoir.color[i];
     const ColorF l = reservoir.color[left];
     const ColorF r = reservoir.color[right];
 
-    const float selfEnergyR = c.r * selfCharge;
-    const float selfEnergyG = c.g * selfCharge;
-    const float selfEnergyB = c.b * selfCharge;
-    const float selfEnergyW = c.w * selfCharge;
-
-    const float leftEnergyR = l.r * leftCharge;
-    const float leftEnergyG = l.g * leftCharge;
-    const float leftEnergyB = l.b * leftCharge;
-    const float leftEnergyW = l.w * leftCharge;
-
-    const float rightEnergyR = r.r * rightCharge;
-    const float rightEnergyG = r.g * rightCharge;
-    const float rightEnergyB = r.b * rightCharge;
-    const float rightEnergyW = r.w * rightCharge;
-
-    float energyR = selfEnergyR + ((leftEnergyR + rightEnergyR - (2.0f * selfEnergyR)) * diffusion);
-    float energyG = selfEnergyG + ((leftEnergyG + rightEnergyG - (2.0f * selfEnergyG)) * diffusion);
-    float energyB = selfEnergyB + ((leftEnergyB + rightEnergyB - (2.0f * selfEnergyB)) * diffusion);
-    float energyW = selfEnergyW + ((leftEnergyW + rightEnergyW - (2.0f * selfEnergyW)) * diffusion);
-
-    energyR *= decay;
-    energyG *= decay;
-    energyB *= decay;
-    energyW *= decay;
-
     ColorF out;
-    if (gScratchCharge[i] > 0.001f) {
-      const float invCharge = 1.0f / gScratchCharge[i];
-      out.r = clamp01(energyR * invCharge);
-      out.g = clamp01(energyG * invCharge);
-      out.b = clamp01(energyB * invCharge);
-      out.w = clamp01(energyW * invCharge);
-    } else {
-      out = makeColor();
-    }
+    out.r = clamp01((c.r + ((l.r + r.r - (2.0f * c.r)) * colorDiffusion)) * colorDecay);
+    out.g = clamp01((c.g + ((l.g + r.g - (2.0f * c.g)) * colorDiffusion)) * colorDecay);
+    out.b = clamp01((c.b + ((l.b + r.b - (2.0f * c.b)) * colorDiffusion)) * colorDecay);
+    out.w = clamp01((c.w + ((l.w + r.w - (2.0f * c.w)) * colorDiffusion)) * colorDecay);
     gScratchColor[i] = out;
   }
 
@@ -932,19 +985,24 @@ void addReservoirPixel(RingReservoir& reservoir, uint16_t i, const ColorF& color
   if (i >= Config::kRingPixels || amount <= 0.0f) return;
 
   const float add = minf(amount, Config::kRingMaxPixelAddPerFrame);
-  const float oldCharge = reservoir.charge[i];
-  const float newCharge = clamp01(oldCharge + add);
-  const float denom = oldCharge + add + 0.0001f;
-  float mix = clamp01((add / denom) * Config::kRingColorAssimilation);
-  if (oldCharge <= 0.001f) mix = 1.0f;
 
-  reservoir.charge[i] = newCharge;
-  reservoir.color[i] = lerpColor(reservoir.color[i], color, mix);
+  // Incoming dye displaces a little stale dye before it adds its own color.
+  // Charge can linger while chroma turns over more quickly.
+  const float flush = clamp01(add * Config::kRingColorFlushPerAdd);
+  reservoir.color[i].r *= (1.0f - flush);
+  reservoir.color[i].g *= (1.0f - flush);
+  reservoir.color[i].b *= (1.0f - flush);
+  reservoir.color[i].w *= (1.0f - flush);
+
+  reservoir.charge[i] = clamp01(reservoir.charge[i] + add);
+  reservoir.color[i].r = clamp01(reservoir.color[i].r + (color.r * add));
+  reservoir.color[i].g = clamp01(reservoir.color[i].g + (color.g * add));
+  reservoir.color[i].b = clamp01(reservoir.color[i].b + (color.b * add));
+  reservoir.color[i].w = clamp01(reservoir.color[i].w + (color.w * add));
 }
 
-void injectReservoirField(RingReservoir& reservoir, float posA, float posB,
-                          const ColorF& color, float amount, float spreadPixels,
-                          float wholeFieldWeight, float anchorWeight) {
+void injectReservoirLocal(RingReservoir& reservoir, float posA, float posB,
+                          const ColorF& color, float amount, float spreadPixels) {
   if (amount <= 0.0f) return;
 
   for (uint16_t i = 0; i < Config::kRingPixels; ++i) {
@@ -952,11 +1010,9 @@ void injectReservoirField(RingReservoir& reservoir, float posA, float posB,
     const float distB = circularDistance(float(i), posB, float(Config::kRingPixels));
     const float wA = polynomialKernel(distA, spreadPixels);
     const float wB = polynomialKernel(distB, spreadPixels);
+    const float weight = clamp01(wA + wB);
+    if (weight <= 0.0f) continue;
 
-    // The whole-field term is the important bit: it keeps the ring from being
-    // merely two bright wounds with dark quadrants between them.
-    const float anchor = clamp01(wA + wB);
-    const float weight = clamp01(wholeFieldWeight + (anchorWeight * anchor));
     addReservoirPixel(reservoir, i, color, amount * weight);
   }
 }
@@ -965,8 +1021,16 @@ void updateReservoirsAndIngress(float dtSec) {
   updateIngressCursor(gLeftCursor, dtSec);
   updateIngressCursor(gRightCursor, dtSec);
 
-  updateReservoir(gFront, dtSec, Config::kFrontClearSeconds, Config::kFrontDiffusionPerSecond);
-  updateReservoir(gRear, dtSec, Config::kRearClearSeconds, Config::kRearDiffusionPerSecond);
+  updateReservoir(gFront, dtSec,
+                  Config::kFrontClearSeconds,
+                  Config::kFrontColorClearSeconds,
+                  Config::kFrontDiffusionPerSecond,
+                  Config::kFrontColorDiffusionPerSecond);
+  updateReservoir(gRear, dtSec,
+                  Config::kRearClearSeconds,
+                  Config::kRearColorClearSeconds,
+                  Config::kRearDiffusionPerSecond,
+                  Config::kRearColorDiffusionPerSecond);
 
   const float arrival = polynomialKernel(phaseDistance(gScene.conveyorPhase, 0.0f),
                                          Config::kArrivalPulseWidth);
@@ -980,21 +1044,17 @@ void updateReservoirsAndIngress(float dtSec) {
   ColorF frontColor = currentSceneColor(clamp01(0.72f + (gScene.charge * 0.28f)), false);
   ColorF rearColor = currentSceneColor(clamp01(0.62f + (gScene.charge * 0.24f)), true);
 
-  // Chroma goes into the ring reservoir; white is added later during render.
-  // This reduces the white-hot ingress scars while preserving smoke haze.
-  frontColor.w *= 0.20f;
-  rearColor.w *= 0.36f;
+  // Store chroma, not haze. White smoke is added during rendering so it cannot
+  // accumulate into a ghost-white reservoir.
+  frontColor.w = 0.0f;
+  rearColor.w *= 0.08f;
 
-  injectReservoirField(gFront, leftPos, rightPos, frontColor, frontInput,
-                       Config::kFrontIngressSpreadPixels,
-                       Config::kFrontWholeFieldInjection,
-                       Config::kFrontAnchorInjection);
+  injectReservoirLocal(gFront, leftPos, rightPos, frontColor, frontInput,
+                       Config::kFrontIngressSpreadPixels);
 
-  injectReservoirField(gRear, rearIngressPosition(leftPos), rearIngressPosition(rightPos),
+  injectReservoirLocal(gRear, rearIngressPosition(leftPos), rearIngressPosition(rightPos),
                        rearColor, rearInput,
-                       Config::kRearIngressSpreadPixels,
-                       Config::kRearWholeFieldInjection,
-                       Config::kRearAnchorInjection);
+                       Config::kRearIngressSpreadPixels);
 }
 
 float sampleRingSurfaceWave(uint16_t i, bool rear) {
@@ -1064,7 +1124,7 @@ void renderRing(RingReservoir& reservoir, const SegmentRange& seg, bool rear) {
 
   for (uint16_t i = 0; i < seg.count && i < Config::kRingPixels; ++i) {
     const float field = clamp01(baseField + reservoir.charge[i]);
-    const float targetBrightness = clamp01((field * maxf(0.16f, gScene.charge)) +
+    const float targetBrightness = clamp01((field * maxf(rear ? 0.16f : 0.22f, gScene.charge)) +
                                            (gScene.charge * instantGain));
     float smoothed = reservoir.brightness[i] +
                      ((targetBrightness - reservoir.brightness[i]) * 0.24f);
@@ -1072,13 +1132,11 @@ void renderRing(RingReservoir& reservoir, const SegmentRange& seg, bool rear) {
     reservoir.brightness[i] = applyBrightnessSlew(reservoir.brightness[i], smoothed,
                                                   Config::kFrameMs / 1000.0f);
 
-    const float memoryLevel = clamp01((reservoir.charge[i] * 0.72f) +
-                                      (reservoir.brightness[i] * 0.55f));
-    ColorF memory = scaleColor(reservoir.color[i], outputScale * memoryLevel);
+    ColorF memory = scaleColor(reservoir.color[i], outputScale * clamp01((rear ? 0.30f : 0.38f) + reservoir.brightness[i]));
     const float avg = (memory.r + memory.g + memory.b) * 0.333f;
-    memory.w = clamp01((memory.w * (rear ? 0.65f : 0.35f)) +
+    memory.w = clamp01((memory.w * (rear ? 0.35f : 0.10f)) +
                        (avg * whiteGain) +
-                       (reservoir.charge[i] * 0.012f * outputScale));
+                       (reservoir.charge[i] * (rear ? 0.007f : 0.004f) * outputScale));
 
     const float surfaceWave = sampleRingSurfaceWave(i, rear);
     if (surfaceWave > 0.0f) {
@@ -1090,13 +1148,25 @@ void renderRing(RingReservoir& reservoir, const SegmentRange& seg, bool rear) {
     // Ring-wide atmospheric wash. This is not a travelling band. It is a dim
     // shared chroma floor so the un-fed quadrants do not collapse to black.
     ColorF moodWash = currentSceneColor(clamp01(moodWashGain * (0.20f + gScene.charge)), rear);
-    moodWash.w *= rear ? 0.65f : 0.35f;
+    moodWash.w *= rear ? 0.30f : 0.08f;
 
     const ColorF idle = hsvColor(Config::kStillHue,
                                  rear ? 0.035f : 0.045f,
                                  Config::kIdleRgbLevel * outputScale,
                                  Config::kIdleWhiteLevel * outputScale);
     ColorF out = addColor(addColor(idle, moodWash), memory);
+    float rescueAmount = 0.0f;
+    if (!rear) {
+      out = rescueBugLampYellow(out, rescueAmount);
+    }
+
+    if (rear) {
+      gRearRendered[i] = toRgbw8(out);
+      gRearYellowRescue[i] = 0;
+    } else {
+      gFrontRendered[i] = toRgbw8(out);
+      gFrontYellowRescue[i] = toByte(rescueAmount);
+    }
     setPixelRgbw(segmentPixel(seg, i), out);
   }
 }
@@ -1113,41 +1183,230 @@ void renderScene() {
 // -----------------------------------------------------------------------------
 // Debug
 // -----------------------------------------------------------------------------
+void printHex2(uint8_t v) {
+  if (v < 16) Serial.print('0');
+  Serial.print(static_cast<unsigned int>(v), HEX);
+}
+
+void printRgbwHex(const Rgbw8& c) {
+  printHex2(c.r);
+  printHex2(c.g);
+  printHex2(c.b);
+  printHex2(c.w);
+}
+
+char classifyRgbw(const Rgbw8& c) {
+  const uint16_t rgbSum = uint16_t(c.r) + uint16_t(c.g) + uint16_t(c.b);
+  const uint8_t rgbMax = max(c.r, max(c.g, c.b));
+  const uint8_t rgbMin = min(c.r, min(c.g, c.b));
+
+  if (rgbSum + uint16_t(c.w) < 18) return 'd';  // dark / nearly idle
+
+  // White / warm-white-ish: W is active or RGB is low-saturation.
+  if (c.w > 18 && c.w >= (rgbMax / 2)) return 'w';
+  if (rgbMax > 24 && (uint16_t(rgbMax) - uint16_t(rgbMin)) < (uint16_t(rgbMax) / 4)) return 'w';
+  if (c.w >= 4 && c.r >= c.g && c.g >= c.b && c.b * 3 <= c.r * 2) return 'w';
+
+  // Yellow/bug-lamp territory: red + green, weak blue. Thresholds are low
+  // because this bench intentionally runs at restrained brightness.
+  if (c.r >= 3 && c.g >= 3 && (uint16_t(c.b) * 2u + 1u) < min(c.r, c.g) &&
+      uint16_t(c.g) * 100u >= uint16_t(c.r) * 86u &&
+      uint16_t(c.r) * 100u >= uint16_t(c.g) * 48u) {
+    return 'y';
+  }
+
+  // Orange/amber: red leads green, blue is weak.
+  if (c.r >= 5 && c.g >= 3 && c.r > c.g && (uint16_t(c.b) * 2u + 1u) < c.r) return 'o';
+
+  if (c.r > c.g && c.r > c.b) return 'r';
+  if (c.g > c.r && c.g > c.b) return 'g';
+  if (c.b > c.r && c.b > c.g) return 'b';
+  return 'm';  // mixed / ambiguous
+}
+
+void printRingSummaryLine(const char* label, const Rgbw8* pix,
+                          const uint8_t* rescue, const RingReservoir& reservoir,
+                          uint32_t nowMs) {
+  uint32_t sumR = 0;
+  uint32_t sumG = 0;
+  uint32_t sumB = 0;
+  uint32_t sumW = 0;
+  float sumCharge = 0.0f;
+  float maxCharge = 0.0f;
+  uint16_t maxLuma = 0;
+  uint8_t maxPix = 0;
+  uint32_t sumRescue = 0;
+  uint8_t maxRescue = 0;
+  uint8_t rescuePixels = 0;
+
+  uint8_t countDark = 0;
+  uint8_t countYellow = 0;
+  uint8_t countOrange = 0;
+  uint8_t countRed = 0;
+  uint8_t countGreen = 0;
+  uint8_t countBlue = 0;
+  uint8_t countWhite = 0;
+  uint8_t countMixed = 0;
+
+  for (uint16_t i = 0; i < Config::kRingPixels; ++i) {
+    const Rgbw8 c = pix[i];
+    sumR += c.r;
+    sumG += c.g;
+    sumB += c.b;
+    sumW += c.w;
+    sumCharge += reservoir.charge[i];
+    if (reservoir.charge[i] > maxCharge) maxCharge = reservoir.charge[i];
+
+    const uint16_t luma = uint16_t(c.r) + uint16_t(c.g) + uint16_t(c.b) + (uint16_t(c.w) * 2);
+    if (luma > maxLuma) {
+      maxLuma = luma;
+      maxPix = i;
+    }
+
+    const uint8_t rescueHere = rescue ? rescue[i] : 0;
+    sumRescue += rescueHere;
+    if (rescueHere > maxRescue) maxRescue = rescueHere;
+    if (rescueHere > 0) ++rescuePixels;
+
+    const char bucket = classifyRgbw(c);
+    if (bucket == 'd') ++countDark;
+    else if (bucket == 'y') ++countYellow;
+    else if (bucket == 'o') ++countOrange;
+    else if (bucket == 'r') ++countRed;
+    else if (bucket == 'g') ++countGreen;
+    else if (bucket == 'b') ++countBlue;
+    else if (bucket == 'w') ++countWhite;
+    else ++countMixed;
+  }
+
+  Serial.print("ring_summary t=");
+  Serial.print(nowMs);
+  Serial.print(" side=");
+  Serial.print(label);
+  Serial.print(" avg_rgbw=");
+  Serial.print(sumR / Config::kRingPixels);
+  Serial.print(',');
+  Serial.print(sumG / Config::kRingPixels);
+  Serial.print(',');
+  Serial.print(sumB / Config::kRingPixels);
+  Serial.print(',');
+  Serial.print(sumW / Config::kRingPixels);
+  Serial.print(" charge_avg=");
+  Serial.print(sumCharge / float(Config::kRingPixels), 3);
+  Serial.print(" charge_max=");
+  Serial.print(maxCharge, 3);
+  Serial.print(" max_pix=");
+  Serial.print(maxPix);
+  Serial.print(" max_luma=");
+  Serial.print(maxLuma);
+  Serial.print(" rescue_avg=");
+  Serial.print(sumRescue / (255.0f * float(Config::kRingPixels)), 3);
+  Serial.print(" rescue_max=");
+  Serial.print(maxRescue / 255.0f, 3);
+  Serial.print(" rescue_px=");
+  Serial.print(rescuePixels);
+  Serial.print(" buckets=");
+  Serial.print("d:");
+  Serial.print(countDark);
+  Serial.print(",y:");
+  Serial.print(countYellow);
+  Serial.print(",o:");
+  Serial.print(countOrange);
+  Serial.print(",r:");
+  Serial.print(countRed);
+  Serial.print(",g:");
+  Serial.print(countGreen);
+  Serial.print(",b:");
+  Serial.print(countBlue);
+  Serial.print(",w:");
+  Serial.print(countWhite);
+  Serial.print(",m:");
+  Serial.print(countMixed);
+
+  Serial.print(" samples=");
+  for (uint16_t i = 0; i < Config::kRingPixels; i += Config::kRingSummarySampleStride) {
+    if (i > 0) Serial.print('|');
+    if (i < 10) Serial.print('0');
+    Serial.print(i);
+    Serial.print(':');
+    printRgbwHex(pix[i]);
+  }
+  Serial.println();
+}
+
+void printRingFullDumpLine(const char* label, const Rgbw8* pix, uint32_t nowMs) {
+  Serial.print("ring44 t=");
+  Serial.print(nowMs);
+  Serial.print(" side=");
+  Serial.print(label);
+  Serial.print(" rgbw_hex=");
+  for (uint16_t i = 0; i < Config::kRingPixels; ++i) {
+    if (i > 0) Serial.print(',');
+    printRgbwHex(pix[i]);
+  }
+  Serial.println();
+}
+
+void printRingDebug(uint32_t nowMs) {
+  if (!Config::kRingColorDebug) return;
+
+  if (nowMs - gLastRingSummaryPrintMs >= Config::kRingSummaryPrintMs) {
+    gLastRingSummaryPrintMs = nowMs;
+    printRingSummaryLine("front", gFrontRendered, gFrontYellowRescue, gFront, nowMs);
+    if (Config::kLogRearRingColors) {
+      printRingSummaryLine("rear", gRearRendered, gRearYellowRescue, gRear, nowMs);
+    }
+  }
+
+  if (Config::kRingColorFullDump &&
+      nowMs - gLastRingFullDumpPrintMs >= Config::kRingFullDumpPrintMs) {
+    gLastRingFullDumpPrintMs = nowMs;
+    printRingFullDumpLine("front", gFrontRendered, nowMs);
+    if (Config::kLogRearRingColors) {
+      printRingFullDumpLine("rear", gRearRendered, nowMs);
+    }
+  }
+}
+
 void printDebug(uint32_t nowMs) {
   if (!Config::kDebugSerial) return;
-  if (nowMs - gLastPrintMs < Config::kPrintMs) return;
-  gLastPrintMs = nowMs;
 
-  Serial.print("online=");
-  Serial.print(gTrack.online ? 1 : 0);
-  Serial.print(" has=");
-  Serial.print(gTrack.hasTrack ? 1 : 0);
-  Serial.print(" fresh=");
-  Serial.print(gTrack.freshAccepted ? 1 : 0);
-  Serial.print(" phase=");
-  Serial.print(gTrack.phase);
-  Serial.print(" range_m=");
-  Serial.print(gTrack.rangeM, 3);
-  Serial.print(" raw_speed=");
-  Serial.print(gTrack.rawSpeedMps, 3);
-  Serial.print(" energy=");
-  Serial.print(gTrack.energy);
-  Serial.print(" infl=");
-  Serial.print(gTrack.influence, 3);
-  Serial.print(" motion=");
-  Serial.print(gScene.motion, 3);
-  Serial.print(" charge=");
-  Serial.print(gScene.charge, 3);
-  Serial.print(" ingress=");
-  Serial.print(gScene.ingressLevel, 3);
-  Serial.print(" wave=");
-  Serial.print(gScene.conveyorPhase, 3);
-  Serial.print(" Lpos=");
-  Serial.print(cursorPosition(gLeftCursor), 2);
-  Serial.print(" Rpos=");
-  Serial.print(cursorPosition(gRightCursor), 2);
-  Serial.print(" hue=");
-  Serial.println(gScene.hue, 3);
+  if (nowMs - gLastPrintMs >= Config::kPrintMs) {
+    gLastPrintMs = nowMs;
+
+    Serial.print("scene online=");
+    Serial.print(gTrack.online ? 1 : 0);
+    Serial.print(" has=");
+    Serial.print(gTrack.hasTrack ? 1 : 0);
+    Serial.print(" fresh=");
+    Serial.print(gTrack.freshAccepted ? 1 : 0);
+    Serial.print(" phase=");
+    Serial.print(gTrack.phase);
+    Serial.print(" range_m=");
+    Serial.print(gTrack.rangeM, 3);
+    Serial.print(" raw_speed=");
+    Serial.print(gTrack.rawSpeedMps, 3);
+    Serial.print(" energy=");
+    Serial.print(gTrack.energy);
+    Serial.print(" infl=");
+    Serial.print(gTrack.influence, 3);
+    Serial.print(" motion=");
+    Serial.print(gScene.motion, 3);
+    Serial.print(" charge=");
+    Serial.print(gScene.charge, 3);
+    Serial.print(" ingress=");
+    Serial.print(gScene.ingressLevel, 3);
+    Serial.print(" wave=");
+    Serial.print(gScene.conveyorPhase, 3);
+    Serial.print(" Lpos=");
+    Serial.print(cursorPosition(gLeftCursor), 2);
+    Serial.print(" Rpos=");
+    Serial.print(cursorPosition(gRightCursor), 2);
+    Serial.print(" hue=");
+    Serial.println(gScene.hue, 3);
+  }
+
+  printRingDebug(nowMs);
 }
 
 }  // namespace
