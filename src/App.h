@@ -26,6 +26,9 @@ class App {
   static const char* modeName(Mode mode);
 
   void renderOff();
+  void renderClapWaitOverlay(uint32_t nowMs);
+  void renderSceneAck(uint32_t nowMs);
+  bool sceneAckActive(uint32_t nowMs) const;
   void maybePrintAnthuriumTelemetry(const StableTrack& track, uint32_t nowMs);
   static const char* phaseName(StableTrack::MotionPhase phase);
 
@@ -39,4 +42,5 @@ class App {
   StartupScene startupScene_;
   AppPhase phase_ = AppPhase::Startup;
   uint32_t lastAnthuriumTelemetryMs_ = 0;
+  uint32_t sceneAckStartedMs_ = 0;
 };
