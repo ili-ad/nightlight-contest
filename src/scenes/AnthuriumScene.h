@@ -2,7 +2,6 @@
 
 #include <stdint.h>
 
-#include "../config/Profiles.h"
 #include "../model/StableTrack.h"
 #include "../render/PixelOutput.h"
 
@@ -14,51 +13,78 @@ class AnthuriumScene {
   void render(const StableTrack& track, uint32_t nowMs);
 
  private:
-  struct RgbwField {
+  struct ColorF {
     float r;
     float g;
     float b;
     float w;
   };
 
-  static float clamp01(float v);
-  static uint8_t toByte(float v);
-  void updateJDelayLines(const StableTrack& track, float dtSec, Profiles::RgbwFloat& rightImpulse, Profiles::RgbwFloat& leftImpulse);
-  void updateFrontRingField(float dtSec, const Profiles::RgbwFloat& rightImpulse, const Profiles::RgbwFloat& leftImpulse);
-  void updateRearRingField(float dtSec);
-  void updateContinuousSignal(const StableTrack& track, float dtSec);
-  Profiles::RgbwFloat signalColor(const StableTrack& track) const;
-  static void fadeColor(RgbwField& color, float fade);
-  static void addColor(RgbwField& color, const Profiles::RgbwFloat& add, float amount);
-  static float smoothToward(float current, float target, float riseAlpha, float fallAlpha);
+  static constexpr uint16_t kFrontRingPixels = 44;
+  static constexpr uint16_t kRearRingPixels = 44;
+  static constexpr uint16_t kRightJPixels = 12;
+  static constexpr uint16_t kLeftJPixels = 12;
+
+  // Compatibility model for the known-good bench sketch:
+  // bench/anthurium_lite_smoke_v3/anthurium_lite_smoke_v3.ino
+  // The old sketch wrote a 77-pixel virtual chain directly. On the final
+  // hardware, physical pixels 24..67 are the front ring, so this stage renders
+  // virtual pixels 24..67 onto the semantic FrontRing. This intentionally
+  // preserves the visual behavior the bench sketch produced on the actual piece.
+  static constexpr uint16_t kVirtualRingPixels = 45;
+  static constexpr uint16_t kVirtualLeftStamenPixels = 16;
+  static constexpr uint16_t kVirtualRightStamenPixels = 16;
+  static constexpr uint16_t kVirtualFrontRingPhysicalStart = 24;
+
+  void updateMotionSignal(const StableTrack& track, float dtSec);
+  void updateSmoothedScene(const StableTrack& track, float dtSec);
+  void updateTorus(float dtSec);
+  void renderFrontRingCompat(float dtSec);
+  void clearInactiveSpans();
+
+  ColorF renderVirtualRingPixel(uint16_t ringPixel, float dtSec);
+  ColorF renderVirtualStamenPixel(uint16_t stamenPixel, uint16_t stamenCount,
+                                  float* brightnessState, float dtSec);
+
+  ColorF currentSceneColor(float brightnessScale) const;
+  float sampleTorusField(uint16_t ringPixel) const;
+  float sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenCount) const;
+
+  static ColorF makeColor(float r = 0.0f, float g = 0.0f, float b = 0.0f, float w = 0.0f);
+  static ColorF scaleColor(const ColorF& color, float scale);
+  static ColorF hsvColor(float hue, float sat, float val, float white);
+  static float normalizeNearness(float rangeM);
+  static float emaAlphaApprox(float dtSec, float tauSec);
+  static float decayApprox(float dtSec, float clearSec);
+  static float applyDeadband(float previous, float target, float threshold);
+  static float applyBrightnessSlew(float previous, float target, float dtSec);
+  static float polynomialKernel(float distance, float width);
+  static float clamp01(float value);
+  static float clampSigned(float value, float lo, float hi);
+  static float lerp(float a, float b, float t);
+  static float absf(float value);
+  static float maxf(float a, float b);
+  static uint8_t toByte(float value);
 
   PixelOutput& output_;
   bool initialized_ = false;
   uint32_t lastNowMs_ = 0;
-  float jConveyorPhase_ = 0.0f;
-  float proximity_ = 0.0f;
-  float motionSignal_ = 0.0f;
-  float chargeSignal_ = 0.0f;
-  float ingressSignal_ = 0.0f;
-  float displayHue_ = 0.33f;
-  float displaySat_ = 0.12f;
-  float displayLevel_ = 0.04f;
-  float displayWhite_ = 0.01f;
+
   bool hadRangeSample_ = false;
   float prevAcceptedRangeM_ = 0.0f;
-  uint32_t heartbeatFrame_ = 0;
-  uint32_t heartbeatLastLogMs_ = 0;
+  float motionSignal_ = 0.0f;
+  float smoothedCharge_ = 0.0f;
+  float stableCharge_ = 0.0f;
+  float smoothedIngressLevel_ = 0.0f;
+  float ingressConveyorPhase_ = 0.0f;
+  float displayHue_ = 0.33f;
+  float displaySat_ = 0.24f;
+  float displayRgbLevel_ = 0.08f;
+  float displayWhite_ = 0.015f;
 
-  static constexpr uint16_t kFrontRingPixels = Profiles::kFrontRingPixels;
-  static constexpr uint16_t kRearRingPixels = Profiles::kRearRingPixels;
-  static constexpr uint16_t kRightJPixels = Profiles::kRightJPixels;
-  static constexpr uint16_t kLeftJPixels = Profiles::kLeftJPixels;
-
-  float frontField_[kFrontRingPixels] = {0.0f};
-  float frontLuma_[kFrontRingPixels] = {0.0f};
-  float rearLuma_[kRearRingPixels] = {0.0f};
-  RgbwField frontColor_[kFrontRingPixels] = {{0.0f, 0.0f, 0.0f, 0.0f}};
-  RgbwField rearColor_[kRearRingPixels] = {{0.0f, 0.0f, 0.0f, 0.0f}};
-  RgbwField leftJColor_[kLeftJPixels] = {{0.0f, 0.0f, 0.0f, 0.0f}};
-  RgbwField rightJColor_[kRightJPixels] = {{0.0f, 0.0f, 0.0f, 0.0f}};
+  float torusCharge_[kVirtualRingPixels] = {0.0f};
+  ColorF torusColor_[kVirtualRingPixels] = {{0.0f, 0.0f, 0.0f, 0.0f}};
+  float ringBrightness_[kVirtualRingPixels] = {0.0f};
+  float leftBrightness_[kVirtualLeftStamenPixels] = {0.0f};
+  float rightBrightness_[kVirtualRightStamenPixels] = {0.0f};
 };
