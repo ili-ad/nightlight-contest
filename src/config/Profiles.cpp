@@ -19,8 +19,8 @@ constexpr C4001Profile kC4001Profile = {
     1800,   // holdMs: ride through short C4001 zero-return gaps.
     6500,   // fadeMs: slow visual fade instead of sudden blackout.
     2000,   // initRetryMs: cold/offline retry cadence.
-    14000,  // acceptedDroughtReinitMs: reinit if accepted targets drought after prior success.
-    12000,  // reinitCooldownMs: avoid hammering the C4001 init path.
+    120000, // acceptedDroughtReinitMs: wait 2 min before treating speed-mode silence as drought.
+    60000,  // reinitCooldownMs: one recovery rung per minute during a real drought.
     true,   // enableC4001AutoInit
 
     0.35f,  // rangeNearM

@@ -182,7 +182,6 @@ bool C4001StableSource::trySoftRecover() {
   lastInitAttemptMs_ = millis();
   lastModeSetOk_ = false;
   lastDetectThresOk_ = configApplied_;
-  lastRecoveryStep_ = recoveryStage_ + 1;
 
   if (!gC4001.begin()) {
     sensorReady_ = false;
@@ -190,26 +189,47 @@ bool C4001StableSource::trySoftRecover() {
     return false;
   }
 
+  uint8_t stage = recoveryStage_;
+
+  // Rung 1: observe/status only. If the radar still reports healthy speed mode,
+  // leave it alone for one long cooldown; speed-mode silence can be legitimate.
+  if (stage == 0) {
+    lastRecoveryStep_ = 1;
+    captureStatus(millis());
+    if (statusHealthy()) {
+      recoveryStage_ = 1;
+      sensorReady_ = true;
+      lastPollMs_ = 0;
+      return true;
+    }
+    stage = 1;
+  }
+
   // Recovery path. Do not call setDetectThres(), setFrettingDetection(),
   // eSaveParams, or eRecoverSen here. Escalate one rung per continuing drought.
-  if (recoveryStage_ == 0) {
+  if (stage == 1) {
+    lastRecoveryStep_ = 2;
     gC4001.setSensor(eStopSen);
     delay(250);
-    gC4001.setSensor(eStartSen);
-    delay(750);
-  } else if (recoveryStage_ == 1) {
     gC4001.setSensor(eResetSen);
     delay(750);
     if (gC4001.begin()) {
       gC4001.setSensor(eStartSen);
       delay(500);
     }
-  } else {
+    recoveryStage_ = 2;
+  } else if (stage == 2) {
+    lastRecoveryStep_ = 3;
     (void)gC4001.setSensorMode(eExitMode);
     delay(1000);
+    recoveryStage_ = 3;
+  } else {
+    lastRecoveryStep_ = 4;
+    // Hardware power-cycle rung is intentionally stubbed for this prototype.
+    // No GPIO is toggled here; future builds can wire a load switch/MOSFET.
+    captureStatus(millis());
+    recoveryStage_ = 3;
   }
-
-  if (recoveryStage_ < 2) ++recoveryStage_;
 
   sensorReady_ = probeSpeedMode();
   lastPollMs_ = 0;
