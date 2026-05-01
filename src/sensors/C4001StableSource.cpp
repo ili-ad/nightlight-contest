@@ -6,6 +6,10 @@
 
 #include "../config/Profiles.h"
 
+#ifndef C4001_ENABLE_SERIAL_EVENTS
+#define C4001_ENABLE_SERIAL_EVENTS 0
+#endif
+
 namespace {
 constexpr uint8_t kC4001I2cAddress = 0x2B;
 constexpr float kMaxAcceptedSpeedMps = 2.60f;
@@ -104,17 +108,27 @@ void C4001StableSource::service(uint32_t nowMs) {
 
   if (sensorReady_) {
     if (droughtAttempt) {
+      #if C4001_ENABLE_SERIAL_EVENTS
       Serial.println("event=c4001_reinit_after_dropout");
+      #endif
     } else if (!wasReady) {
+      #if C4001_ENABLE_SERIAL_EVENTS
       Serial.println("event=c4001_init_online");
+      #endif
     } else if (manualAttempt) {
+      #if C4001_ENABLE_SERIAL_EVENTS
       Serial.println("event=c4001_manual_reinit");
+      #endif
     }
   } else {
     if (droughtAttempt) {
+      #if C4001_ENABLE_SERIAL_EVENTS
       Serial.println("warn=c4001_reinit_after_dropout_failed");
+      #endif
     } else if (manualAttempt) {
+      #if C4001_ENABLE_SERIAL_EVENTS
       Serial.println("warn=c4001_manual_init_failed");
+      #endif
     }
   }
 }
@@ -166,7 +180,9 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
 
   if (accepted) {
     if (!stableHasTarget_ && everHadAcceptedTarget_) {
+      #if C4001_ENABLE_SERIAL_EVENTS
       Serial.println("event=c4001_read_resume");
+      #endif
     }
 
     stableHasTarget_ = true;

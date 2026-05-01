@@ -14,6 +14,16 @@
 #define NIGHTLIGHT_ENABLE_SERIAL_EVENTS 0
 #endif
 
+#ifndef NIGHTLIGHT_ENABLE_SERIAL_COMMANDS
+#define NIGHTLIGHT_ENABLE_SERIAL_COMMANDS 0
+#endif
+
+#if NIGHTLIGHT_ENABLE_TELEMETRY || NIGHTLIGHT_ENABLE_SERIAL_EVENTS || NIGHTLIGHT_ENABLE_SERIAL_COMMANDS
+#define NIGHTLIGHT_SERIAL_ENABLED 1
+#else
+#define NIGHTLIGHT_SERIAL_ENABLED 0
+#endif
+
 namespace {
 LayoutMap gLayoutMap;
 PixelOutput gPixelOutput(gLayoutMap);
@@ -50,7 +60,9 @@ App::App(LayoutMap& layoutMap, PixelOutput& pixelOutput)
 
 void App::setup() {
   (void)layoutMap_;
+  #if NIGHTLIGHT_SERIAL_ENABLED
   Serial.begin(115200);
+  #endif
 #if NIGHTLIGHT_ENABLE_SERIAL_EVENTS
   Serial.println("Nightlight v2 production boot");
 #endif
@@ -77,6 +89,7 @@ void App::loop() {
     return;
   }
 
+#if NIGHTLIGHT_ENABLE_SERIAL_COMMANDS
   while (Serial.available() > 0) {
     const char command = static_cast<char>(Serial.read());
     Mode nextMode = modeController_.currentMode();
@@ -133,6 +146,7 @@ void App::loop() {
 #endif
     }
   }
+#endif
 
   if (clapDetector_.update(nowMs)) {
     const Mode nextMode = modeController_.advanceMode();
@@ -285,6 +299,7 @@ void App::maybePrintAnthuriumTelemetry(const StableTrack& track, uint32_t nowMs)
 void App::maybePrintAnthuriumTelemetry(const StableTrack&, uint32_t) {}
 #endif
 
+#if NIGHTLIGHT_ENABLE_SERIAL_EVENTS || NIGHTLIGHT_ENABLE_SERIAL_COMMANDS
 const char* App::modeName(Mode mode) {
   switch (mode) {
     case Mode::Off:
@@ -297,6 +312,9 @@ const char* App::modeName(Mode mode) {
       return "Unknown";
   }
 }
+#else
+const char* App::modeName(Mode) { return ""; }
+#endif
 
 #if NIGHTLIGHT_ENABLE_TELEMETRY
 const char* App::phaseName(StableTrack::MotionPhase phase) {

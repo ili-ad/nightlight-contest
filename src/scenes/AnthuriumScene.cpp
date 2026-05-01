@@ -1,16 +1,6 @@
 #include "AnthuriumScene.h"
 
-#include <Arduino.h>
 #include <math.h>
-
-// Production default: keep the Anthurium scene quiet.
-// Set these to 1 while bench-testing the native/projection comparison.
-#ifndef ANTHURIUM_ENABLE_SHADOW44_SUMMARY
-#define ANTHURIUM_ENABLE_SHADOW44_SUMMARY 0
-#endif
-#ifndef ANTHURIUM_ENABLE_SHADOW44_DUMPS
-#define ANTHURIUM_ENABLE_SHADOW44_DUMPS 0
-#endif
 
 namespace {
 // These constants are intentionally copied from the known-good bench sketch
@@ -32,11 +22,6 @@ constexpr float kIngressTravelSeconds = 3.0f;
 constexpr float kIngressSmoothingSec = 0.28f;
 constexpr float kIngressConveyorWidth = 0.22f;
 constexpr float kIngressFloorFromCharge = 0.42f;
-constexpr float kTorusClearSeconds = 4.5f;
-constexpr float kTorusDiffusionPerSecond = 0.34f;
-constexpr float kReservoirInjectionGain = 0.48f;
-constexpr float kTorusInstantGain = 0.08f;
-constexpr float kTorusBaseFieldLevel = 0.06f;
 constexpr float kStamenAmbientFloor = 0.05f;
 
 constexpr float kChargeRiseAlpha = 0.24f;
@@ -51,13 +36,10 @@ constexpr float kMotionRgbBoost = 0.10f;
 constexpr float kNearRgbBoost = 0.14f;
 constexpr float kWhiteBase = 0.015f;
 constexpr float kWhiteChargeGain = 0.14f;
-constexpr float kTorusWhiteGain = 0.28f;
 constexpr float kStamenWhiteGain = 0.12f;
 
-constexpr uint16_t kVirtualIngressA = 2;
-constexpr uint16_t kVirtualIngressB = (45 / 2) + 2;  // 24, matching v3.
-constexpr float kIngressSpreadPixels = 3.5f;
 constexpr bool kTipAtHighIndex = true;
+constexpr uint16_t kFrontRingProjectionRotation = 11;
 
 // Stage 7 display-only tuning.
 // Reduce the Stage 6 RGB lift by about 30% to regain saturation through
@@ -83,7 +65,7 @@ constexpr float kIdleSafetyNetWarmB = 0.004f;
 constexpr float kIdleSafetyNetWarmW = 0.004f;
 
 // Phase 3: V4-style J/spadix travelling-wave render. Keep these deliberately
-// separate from the front-ring projection/native comparison arrays so lighting
+// separate from the front-ring native brightness array so lighting
 // the physical J spans does not perturb the proven front-ring behavior.
 constexpr float kJIngressFloorFromCharge = 0.42f;
 constexpr float kJAmbientFloor = 0.090f;
@@ -125,10 +107,6 @@ constexpr bool kRearWallReverseOutput = true;
 // Experimental rear horizon counter-color. When enabled, the lower/6-o'clock
 // rear-wall inlet uses a hue-rotated companion color while the upper/noon inlet
 // keeps the normal scene color. Set false to return to the symmetric rear wash.
-constexpr bool kRearWallEnableLowerAnchorComplement = false;
-constexpr float kRearWallComplementHueShift = 0.50f;
-constexpr float kRearWallComplementSaturationScale = 0.90f;
-constexpr float kRearWallComplementLevelScale = 0.92f;
 
 constexpr float kRearWallIdleRgbLevel = 0.0025f;
 constexpr float kRearWallIdleWhiteLevel = 0.0035f;
@@ -167,17 +145,6 @@ void AnthuriumScene::begin() {
   displayRgbLevel_ = kBaseRgbLevel;
   displayWhite_ = kWhiteBase;
 
-  for (uint16_t i = 0; i < kVirtualRingPixels; ++i) {
-    torusCharge_[i] = 0.0f;
-    torusColor_[i] = makeColor();
-    ringBrightness_[i] = 0.0f;
-  }
-  for (uint16_t i = 0; i < kVirtualLeftStamenPixels; ++i) {
-    leftBrightness_[i] = 0.0f;
-  }
-  for (uint16_t i = 0; i < kVirtualRightStamenPixels; ++i) {
-    rightBrightness_[i] = 0.0f;
-  }
   for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     nativeFrontBrightness_[i] = 0.0f;
   }
@@ -193,11 +160,8 @@ void AnthuriumScene::begin() {
     rearReservoirBrightness_[i] = 0.0f;
   }
   rearDriveColor_ = currentSceneColor(0.0f);
-  rearComplementDriveColor_ = currentSceneColor(0.0f);
   rearDriveWhite_ = 0.0f;
   rearIdleSafetyNetLevel_ = 0.0f;
-  lastCompareLogMs_ = 0;
-  lastCompareDumpMs_ = 0;
   idleSafetyNetLevel_ = 0.0f;
 }
 
@@ -217,7 +181,6 @@ void AnthuriumScene::render(const StableTrack& track, uint32_t nowMs) {
 
   updateMotionSignal(track, dtSec);
   updateSmoothedScene(track, dtSec);
-  updateTorus(dtSec);
   updateRearDriveColor(dtSec);
   updateRearRingReservoir(dtSec);
   renderFrontRingCompat(dtSec, nowMs);
@@ -308,93 +271,16 @@ void AnthuriumScene::updateSmoothedScene(const StableTrack& track, float dtSec) 
   }
 }
 
-void AnthuriumScene::updateTorus(float dtSec) {
-  float nextCharge[kVirtualRingPixels];
-  ColorF nextColor[kVirtualRingPixels];
-  const float decay = decayApprox(dtSec, kTorusClearSeconds);
-  const float diffusion = kTorusDiffusionPerSecond * dtSec;
-
-  for (uint16_t i = 0; i < kVirtualRingPixels; ++i) {
-    const uint16_t left = (i == 0) ? (kVirtualRingPixels - 1) : (i - 1);
-    const uint16_t right = (i + 1) % kVirtualRingPixels;
-
-    float charge = torusCharge_[i];
-    charge += (torusCharge_[left] + torusCharge_[right] - (2.0f * torusCharge_[i])) * diffusion;
-    charge *= decay;
-    nextCharge[i] = clamp01(charge);
-
-    const ColorF c = torusColor_[i];
-    const ColorF l = torusColor_[left];
-    const ColorF r = torusColor_[right];
-    nextColor[i].r = clamp01((c.r + ((l.r + r.r - (2.0f * c.r)) * diffusion)) * decay);
-    nextColor[i].g = clamp01((c.g + ((l.g + r.g - (2.0f * c.g)) * diffusion)) * decay);
-    nextColor[i].b = clamp01((c.b + ((l.b + r.b - (2.0f * c.b)) * diffusion)) * decay);
-    nextColor[i].w = clamp01((c.w + ((l.w + r.w - (2.0f * c.w)) * diffusion)) * decay);
-  }
-
-  const float torusInput = clamp01(stableCharge_) * dtSec * kReservoirInjectionGain;
-  const ColorF injectColor = currentSceneColor(clamp01(0.65f + (stableCharge_ * 0.35f)));
-
-  for (uint16_t i = 0; i < kVirtualRingPixels; ++i) {
-    float distA = absf(static_cast<float>(static_cast<int>(i) - static_cast<int>(kVirtualIngressA)));
-    float distB = absf(static_cast<float>(static_cast<int>(i) - static_cast<int>(kVirtualIngressB)));
-    if (distA > (kVirtualRingPixels * 0.5f)) distA = kVirtualRingPixels - distA;
-    if (distB > (kVirtualRingPixels * 0.5f)) distB = kVirtualRingPixels - distB;
-
-    const float wA = polynomialKernel(distA, kIngressSpreadPixels * 2.0f);
-    const float wB = polynomialKernel(distB, kIngressSpreadPixels * 2.0f);
-    const float weight = clamp01(wA + wB);
-    if (weight <= 0.0f) continue;
-
-    nextCharge[i] = clamp01(nextCharge[i] + (torusInput * weight));
-    nextColor[i].r = clamp01(nextColor[i].r + (injectColor.r * torusInput * weight));
-    nextColor[i].g = clamp01(nextColor[i].g + (injectColor.g * torusInput * weight));
-    nextColor[i].b = clamp01(nextColor[i].b + (injectColor.b * torusInput * weight));
-    nextColor[i].w = clamp01(nextColor[i].w + (injectColor.w * torusInput * weight));
-  }
-
-  for (uint16_t i = 0; i < kVirtualRingPixels; ++i) {
-    torusCharge_[i] = nextCharge[i];
-    torusColor_[i] = nextColor[i];
-  }
-}
 
 void AnthuriumScene::renderFrontRingCompat(float dtSec, uint32_t nowMs) {
-  // Build the 32-pixel projected reference band from the old v3 virtual stamen outputs.
-  // Stage 5 renders the direct native 44-pixel candidate, but keeps the projected
-  // reference computed in parallel so Serial logs can still compare the two.
-  ColorF source[kProjectedSourcePixels];
-
-  for (uint16_t i = 0; i < kVirtualLeftStamenPixels; ++i) {
-    source[i] = renderVirtualStamenPixel(i, kVirtualLeftStamenPixels, leftBrightness_, dtSec);
-  }
-  for (uint16_t i = 0; i < kVirtualRightStamenPixels; ++i) {
-    source[kVirtualLeftStamenPixels + i] =
-        renderVirtualStamenPixel(i, kVirtualRightStamenPixels, rightBrightness_, dtSec);
-  }
-
-  ColorF projected[kFrontRingPixels];
+  float nativeMean = 0.0f;
   ColorF native[kFrontRingPixels];
-  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
-    projected[i] = makeColor();
-    native[i] = makeColor();
-  }
 
   for (uint16_t dst = 0; dst < kFrontRingPixels; ++dst) {
-    const float srcPos = (static_cast<float>(dst) * static_cast<float>(kProjectedSourcePixels)) /
-                         static_cast<float>(kFrontRingPixels);
-    const uint16_t src0 = static_cast<uint16_t>(srcPos) % kProjectedSourcePixels;
-    const uint16_t src1 = (src0 + 1) % kProjectedSourcePixels;
-    const float mix = srcPos - static_cast<float>(src0);
-    const ColorF projectedColor = lerpColor(source[src0], source[src1], mix);
-    const ColorF nativeColor = renderNativeFrontPixel(dst, dtSec);
-
     const uint16_t rotated = static_cast<uint16_t>((dst + kFrontRingProjectionRotation) % kFrontRingPixels);
-    projected[rotated] = projectedColor;
-    native[rotated] = nativeColor;
+    native[rotated] = renderNativeFrontPixel(dst, dtSec);
   }
 
-  float nativeMean = 0.0f;
   for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
     nativeMean += colorLuma(native[i]);
   }
@@ -428,9 +314,6 @@ void AnthuriumScene::renderFrontRingCompat(float dtSec, uint32_t nowMs) {
                               toByte(visible.b * kVisibleRgbGain),
                               toByte(visible.w * kVisibleWhiteGain));
   }
-
-  maybeLogProjectionComparison(projected, native, nowMs);
-  maybeDumpProjectionArrays(projected, native, nowMs);
 }
 
 AnthuriumScene::ColorF AnthuriumScene::renderNativeFrontPixel(uint16_t logicalPixel, float dtSec) {
@@ -447,35 +330,7 @@ AnthuriumScene::ColorF AnthuriumScene::renderNativeFrontPixel(uint16_t logicalPi
   return color;
 }
 
-AnthuriumScene::ColorF AnthuriumScene::renderVirtualRingPixel(uint16_t ringPixel, float dtSec) {
-  const float field = sampleTorusField(ringPixel);
-  const float targetBrightness = clamp01((field * maxf(0.22f, stableCharge_)) +
-                                         (stableCharge_ * kTorusInstantGain));
-  float smoothed = ringBrightness_[ringPixel] + ((targetBrightness - ringBrightness_[ringPixel]) * 0.24f);
-  smoothed = applyDeadband(ringBrightness_[ringPixel], smoothed, 0.015f);
-  ringBrightness_[ringPixel] = applyBrightnessSlew(ringBrightness_[ringPixel], smoothed, dtSec);
 
-  ColorF c = scaleColor(torusColor_[ringPixel], clamp01(0.28f + ringBrightness_[ringPixel]));
-  const float avg = (c.r + c.g + c.b) * 0.333f;
-  c.w = clamp01(c.w + (avg * kTorusWhiteGain) + (torusCharge_[ringPixel] * 0.06f));
-  return c;
-}
-
-AnthuriumScene::ColorF AnthuriumScene::renderVirtualStamenPixel(uint16_t stamenPixel,
-                                                                uint16_t stamenCount,
-                                                                float* brightnessState,
-                                                                float dtSec) {
-  const float ingress = sampleStamenIngress(stamenPixel, stamenCount);
-  const float targetBrightness = clamp01((ingress * smoothedIngressLevel_) +
-                                         (kStamenAmbientFloor * maxf(0.25f, stableCharge_)));
-  float smoothed = brightnessState[stamenPixel] + ((targetBrightness - brightnessState[stamenPixel]) * 0.22f);
-  smoothed = applyDeadband(brightnessState[stamenPixel], smoothed, 0.015f);
-  brightnessState[stamenPixel] = applyBrightnessSlew(brightnessState[stamenPixel], smoothed, dtSec);
-
-  ColorF c = currentSceneColor(brightnessState[stamenPixel]);
-  c.w = clamp01(c.w + (((c.r + c.g + c.b) * 0.333f) * kStamenWhiteGain));
-  return c;
-}
 
 void AnthuriumScene::renderJSpans(float dtSec) {
   const float jIdleNet = maxf(idleSafetyNetLevel_, rearIdleSafetyNetLevel_);
@@ -543,25 +398,14 @@ void AnthuriumScene::updateRearDriveColor(float dtSec) {
   // Crossfade the wall-wash drive in RGBW space. This deliberately avoids
   // immediate hue snapping; red-to-blue transitions pass through a soft violet
   // rather than flipping the whole rear wash in one frame.
-  const float brightnessScale = clamp01(0.72f + (stableCharge_ * 0.28f));
-  ColorF target = currentSceneColor(brightnessScale);
-
-  float complementHue = displayHue_ + kRearWallComplementHueShift;
-  while (complementHue >= 1.0f) complementHue -= 1.0f;
-  while (complementHue < 0.0f) complementHue += 1.0f;
-  ColorF complementTarget = hsvColor(complementHue,
-                                     clamp01(displaySat_ * kRearWallComplementSaturationScale),
-                                     clamp01(displayRgbLevel_ * brightnessScale * kRearWallComplementLevelScale),
-                                     0.0f);
+  ColorF target = currentSceneColor(clamp01(0.72f + (stableCharge_ * 0.28f)));
 
   // Store color energy, not haze. White is kept as a slow render-only lift.
   const float targetWhite = clamp01(target.w * 0.25f);
   target.w = 0.0f;
-  complementTarget.w = 0.0f;
 
   const float a = emaAlphaApprox(dtSec, kRearWallColorCrossfadeSec);
   rearDriveColor_ = lerpColor(rearDriveColor_, target, a);
-  rearComplementDriveColor_ = lerpColor(rearComplementDriveColor_, complementTarget, a);
   rearDriveWhite_ = lerp(rearDriveWhite_, targetWhite, a);
 }
 
@@ -601,15 +445,7 @@ void AnthuriumScene::updateRearRingReservoir(float dtSec) {
       const float weight = clamp01(weightA + weightB);
       if (weight <= 0.0f) continue;
 
-      // Anchor A is the lower/6-o'clock rear-wall inlet. With the experiment
-      // enabled, that inlet stores a complementary hue while the upper/noon
-      // inlet keeps the normal rear drive color. Charge budget stays unchanged:
-      // only the color mixture changes.
-      ColorF drive = rearDriveColor_;
-      if (kRearWallEnableLowerAnchorComplement) {
-        const float inv = weightA / weight;
-        drive = lerpColor(rearDriveColor_, rearComplementDriveColor_, inv);
-      }
+      const ColorF drive = rearDriveColor_;
 
       const float add = minf(input * weight, kRearWallMaxPixelAddPerFrame);
       const float flush = clamp01(add * kRearWallColorFlushPerAdd);
@@ -725,23 +561,10 @@ float AnthuriumScene::sampleJIngress(uint16_t logicalPixel, uint16_t pixelCount,
   return clamp01(floor + (moving * smoothedIngressLevel_));
 }
 
-float AnthuriumScene::sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenCount) const {
-  if (stamenCount == 0) return 0.0f;
-  const float denom = (stamenCount > 1) ? static_cast<float>(stamenCount - 1) : 1.0f;
-  const float stamenPos = static_cast<float>(stamenPixel) / denom;
-  const float tipToEntry = kTipAtHighIndex ? (1.0f - stamenPos) : stamenPos;
-  float delta = absf(tipToEntry - ingressConveyorPhase_);
-  if (delta > 0.5f) delta = 1.0f - delta;
-
-  const float moving = polynomialKernel(delta, kIngressConveyorWidth);
-  const float floor = stableCharge_ * kIngressFloorFromCharge;
-  return clamp01(floor + (moving * smoothedIngressLevel_));
-}
 
 float AnthuriumScene::sampleNativeFrontIngress(uint16_t logicalPixel) const {
-  // Shadow candidate: compute the same conveyor directly over the 44-pixel
-  // FrontRing as two 22-cell halves, instead of stretching the 32-pixel virtual
-  // source band. This is not rendered; it is only compared in Serial logs.
+  // Native FrontRing conveyor: compute the old V3-style travelling wave
+  // directly over the 44-pixel front ring as two 22-cell halves.
   const uint16_t halfPixels = kFrontRingPixels / 2;
   const uint16_t withinHalf = logicalPixel < halfPixels ? logicalPixel : logicalPixel - halfPixels;
   const float denom = halfPixels > 1 ? static_cast<float>(halfPixels - 1) : 1.0f;
@@ -755,121 +578,13 @@ float AnthuriumScene::sampleNativeFrontIngress(uint16_t logicalPixel) const {
   return clamp01(floor + (moving * smoothedIngressLevel_));
 }
 
-void AnthuriumScene::maybeLogProjectionComparison(const ColorF* projected, const ColorF* native, uint32_t nowMs) {
-#if !ANTHURIUM_ENABLE_SHADOW44_SUMMARY
-  (void)projected;
-  (void)native;
-  (void)nowMs;
-  return;
-#else
-  constexpr uint32_t kCompareLogMs = 1000;
-  if (lastCompareLogMs_ != 0 && (nowMs - lastCompareLogMs_) < kCompareLogMs) return;
-  lastCompareLogMs_ = nowMs;
 
-  float pMean = 0.0f;
-  float nMean = 0.0f;
-  float pMax = 0.0f;
-  float nMax = 0.0f;
-  float pSat = 0.0f;
-  float nSat = 0.0f;
-  float pWhite = 0.0f;
-  float nWhite = 0.0f;
-  float diffMean = 0.0f;
-  float diffMax = 0.0f;
-  uint8_t pActive = 0;
-  uint8_t nActive = 0;
 
-  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
-    const float pl = colorLuma(projected[i]);
-    const float nl = colorLuma(native[i]);
-    const float d = absf(pl - nl);
-    pMean += pl;
-    nMean += nl;
-    pSat += colorSaturation(projected[i]);
-    nSat += colorSaturation(native[i]);
-    pWhite += projected[i].w;
-    nWhite += native[i].w;
-    if (pl > pMax) pMax = pl;
-    if (nl > nMax) nMax = nl;
-    if (d > diffMax) diffMax = d;
-    diffMean += d;
-    if (pl > 0.012f) ++pActive;
-    if (nl > 0.012f) ++nActive;
-  }
-
-  const float denom = static_cast<float>(kFrontRingPixels);
-  pMean /= denom;
-  nMean /= denom;
-  pSat /= denom;
-  nSat /= denom;
-  pWhite /= denom;
-  nWhite /= denom;
-  diffMean /= denom;
-
-  Serial.print("shadow44 motion="); Serial.print(motionSignal_, 3);
-  Serial.print(" charge="); Serial.print(stableCharge_, 3);
-  Serial.print(" ingress="); Serial.print(smoothedIngressLevel_, 3);
-  Serial.print(" phase_f="); Serial.print(ingressConveyorPhase_, 3);
-  Serial.print(" hue="); Serial.print(displayHue_, 3);
-  Serial.print(" sat="); Serial.print(displaySat_, 3);
-  Serial.print(" lvl="); Serial.print(displayRgbLevel_, 3);
-  Serial.print(" w="); Serial.print(displayWhite_, 3);
-  Serial.print(" idleNet="); Serial.print(idleSafetyNetLevel_, 3);
-  Serial.print(" pAct="); Serial.print(pActive);
-  Serial.print(" nAct="); Serial.print(nActive);
-  Serial.print(" pMean="); Serial.print(pMean, 3);
-  Serial.print(" nMean="); Serial.print(nMean, 3);
-  Serial.print(" pMax="); Serial.print(pMax, 3);
-  Serial.print(" nMax="); Serial.print(nMax, 3);
-  Serial.print(" pSat="); Serial.print(pSat, 3);
-  Serial.print(" nSat="); Serial.print(nSat, 3);
-  Serial.print(" pW="); Serial.print(pWhite, 3);
-  Serial.print(" nW="); Serial.print(nWhite, 3);
-  Serial.print(" dMean="); Serial.print(diffMean, 3);
-  Serial.print(" dMax="); Serial.println(diffMax, 3);
-#endif
-}
-
-void AnthuriumScene::maybeDumpProjectionArrays(const ColorF* projected, const ColorF* native, uint32_t nowMs) {
-#if !ANTHURIUM_ENABLE_SHADOW44_DUMPS
-  (void)projected;
-  (void)native;
-  (void)nowMs;
-  return;
-#else
-  constexpr uint32_t kDumpMs = 5000;
-  if (lastCompareDumpMs_ != 0 && (nowMs - lastCompareDumpMs_) < kDumpMs) return;
-  lastCompareDumpMs_ = nowMs;
-
-  Serial.print("shadow44_proj_luma=");
-  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
-    if (i > 0) Serial.print(',');
-    Serial.print(colorLuma(projected[i]), 2);
-  }
-  Serial.println();
-
-  Serial.print("shadow44_native_luma=");
-  for (uint16_t i = 0; i < kFrontRingPixels; ++i) {
-    if (i > 0) Serial.print(',');
-    Serial.print(colorLuma(native[i]), 2);
-  }
-  Serial.println();
-#endif
-}
-
-float AnthuriumScene::sampleTorusField(uint16_t ringPixel) const {
-  return clamp01(kTorusBaseFieldLevel + torusCharge_[ringPixel]);
-}
 
 AnthuriumScene::ColorF AnthuriumScene::currentSceneColor(float brightnessScale) const {
   return hsvColor(displayHue_, displaySat_, displayRgbLevel_ * clamp01(brightnessScale), displayWhite_ * clamp01(brightnessScale));
 }
 
-AnthuriumScene::ColorF AnthuriumScene::currentRearSceneColor(float brightnessScale) const {
-  ColorF c = scaleColor(rearDriveColor_, clamp01(brightnessScale));
-  c.w = rearDriveWhite_ * clamp01(brightnessScale);
-  return c;
-}
 
 AnthuriumScene::ColorF AnthuriumScene::makeColor(float r, float g, float b, float w) {
   ColorF c;
@@ -994,12 +709,6 @@ float AnthuriumScene::colorLuma(const ColorF& color) {
   return clamp01((color.r * 0.30f) + (color.g * 0.59f) + (color.b * 0.11f) + color.w);
 }
 
-float AnthuriumScene::colorSaturation(const ColorF& color) {
-  const float mx = maxf(maxf(color.r, color.g), color.b);
-  if (mx <= 0.001f) return 0.0f;
-  const float mn = minf(minf(color.r, color.g), color.b);
-  return clamp01((mx - mn) / mx);
-}
 
 uint8_t AnthuriumScene::toByte(float value) {
   return static_cast<uint8_t>(clamp01(value) * 255.0f);

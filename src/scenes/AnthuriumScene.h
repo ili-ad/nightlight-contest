@@ -25,46 +25,23 @@ class AnthuriumScene {
   static constexpr uint16_t kRightJPixels = 12;
   static constexpr uint16_t kLeftJPixels = 12;
 
-  // Compatibility model for the known-good bench sketch:
-  // bench/anthurium_lite_smoke_v3/anthurium_lite_smoke_v3.ino
-  //
-  // The native 44-pixel FrontRing is the visible primary surface.
-  // Phase 3 also renders the physical RightJ/LeftJ spans with a V4-style
-  // travelling-wave shader. The old virtual 32-pixel stamen projection remains
-  // computed only as a comparison reference when shadow logging is enabled.
-  static constexpr uint16_t kVirtualRingPixels = 45;
-  static constexpr uint16_t kVirtualLeftStamenPixels = 16;
-  static constexpr uint16_t kVirtualRightStamenPixels = 16;
-  static constexpr uint16_t kProjectedSourcePixels = kVirtualLeftStamenPixels + kVirtualRightStamenPixels;
-  // Rotate the projected band by about a quarter turn so the emergence moves
-  // from roughly 9 o'clock toward the physical 6 o'clock start of the ring.
-  static constexpr uint16_t kFrontRingProjectionRotation = 11;
-
+  // Native production model: FrontRing is rendered directly over 44 pixels.
   void updateMotionSignal(const StableTrack& track, float dtSec);
   void updateSmoothedScene(const StableTrack& track, float dtSec);
-  void updateTorus(float dtSec);
   void renderFrontRingCompat(float dtSec, uint32_t nowMs);
   void renderJSpans(float dtSec);
   void updateRearDriveColor(float dtSec);
   void updateRearRingReservoir(float dtSec);
   void renderRearRing(float dtSec, uint32_t nowMs);
 
-  ColorF renderVirtualRingPixel(uint16_t ringPixel, float dtSec);
-  ColorF renderVirtualStamenPixel(uint16_t stamenPixel, uint16_t stamenCount,
-                                  float* brightnessState, float dtSec);
   ColorF renderNativeFrontPixel(uint16_t logicalPixel, float dtSec);
   ColorF renderJPixel(uint16_t logicalPixel, uint16_t pixelCount, float* brightnessState,
                       bool tipAtHighIndex, float phaseOffset, float dtSec);
-  ColorF currentRearSceneColor(float brightnessScale) const;
 
   ColorF currentSceneColor(float brightnessScale) const;
-  float sampleTorusField(uint16_t ringPixel) const;
-  float sampleStamenIngress(uint16_t stamenPixel, uint16_t stamenCount) const;
   float sampleNativeFrontIngress(uint16_t logicalPixel) const;
   float sampleJIngress(uint16_t logicalPixel, uint16_t pixelCount,
                        bool tipAtHighIndex, float phaseOffset) const;
-  void maybeLogProjectionComparison(const ColorF* projected, const ColorF* native, uint32_t nowMs);
-  void maybeDumpProjectionArrays(const ColorF* projected, const ColorF* native, uint32_t nowMs);
 
   static ColorF makeColor(float r = 0.0f, float g = 0.0f, float b = 0.0f, float w = 0.0f);
   static ColorF scaleColor(const ColorF& color, float scale);
@@ -84,7 +61,6 @@ class AnthuriumScene {
   static float maxf(float a, float b);
   static float minf(float a, float b);
   static float colorLuma(const ColorF& color);
-  static float colorSaturation(const ColorF& color);
   static uint8_t toByte(float value);
 
   PixelOutput& output_;
@@ -103,11 +79,6 @@ class AnthuriumScene {
   float displayRgbLevel_ = 0.08f;
   float displayWhite_ = 0.015f;
 
-  float torusCharge_[kVirtualRingPixels] = {0.0f};
-  ColorF torusColor_[kVirtualRingPixels] = {{0.0f, 0.0f, 0.0f, 0.0f}};
-  float ringBrightness_[kVirtualRingPixels] = {0.0f};
-  float leftBrightness_[kVirtualLeftStamenPixels] = {0.0f};
-  float rightBrightness_[kVirtualRightStamenPixels] = {0.0f};
   float nativeFrontBrightness_[kFrontRingPixels] = {0.0f};
   float physicalLeftBrightness_[kLeftJPixels] = {0.0f};
   float physicalRightBrightness_[kRightJPixels] = {0.0f};
@@ -119,11 +90,8 @@ class AnthuriumScene {
   ColorF rearReservoirColor_[kRearRingPixels] = {{0.0f, 0.0f, 0.0f, 0.0f}};
   float rearReservoirBrightness_[kRearRingPixels] = {0.0f};
   ColorF rearDriveColor_ = {0.0f, 0.0f, 0.0f, 0.0f};
-  ColorF rearComplementDriveColor_ = {0.0f, 0.0f, 0.0f, 0.0f};
   float rearDriveWhite_ = 0.0f;
   float rearIdleSafetyNetLevel_ = 0.0f;
 
   float idleSafetyNetLevel_ = 0.0f;
-  uint32_t lastCompareLogMs_ = 0;
-  uint32_t lastCompareDumpMs_ = 0;
 };
