@@ -45,8 +45,8 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     2.20f,  // jColorMemorySec
     0.55f,  // jAdvectionStrength
     0.22f,  // jDiffusionStrength
-    false,  // rightJIngressReversed
-    true,   // leftJIngressReversed
+    true,   // rightJIngressReversed
+    false,  // leftJIngressReversed
     1.10f,  // jTipInjectionGain
     0.10f,  // jBaseGlow
 
@@ -54,6 +54,9 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     0.40f,  // frontRingDiffusion
     1.20f,  // frontRingImpulseGain
     2,      // frontRingBlurPasses
+    2,      // frontRingIngressA
+    24,     // frontRingIngressB
+    0.12f,  // displayWhiteOutputScale
     0.58f,  // rearRingWashScale
     5.40f,  // rearRingMemorySec
     0.02f,  // torusBaseField
@@ -73,9 +76,9 @@ constexpr AnthuriumProfile kAnthuriumProfile = {
     0.07f,  // idleRearRingFloor
     0.05f,  // idleJFloor
 
-    {1.00f, 0.28f, 0.08f, 0.20f},  // approachColor
-    {0.22f, 0.45f, 1.00f, 0.18f},  // retreatColor
-    {0.46f, 0.18f, 0.06f, 0.04f},  // idleColor
+    {1.00f, 0.28f, 0.08f, 0.00f},  // approachColor
+    {0.22f, 0.45f, 1.00f, 0.00f},  // retreatColor
+    {0.46f, 0.18f, 0.06f, 0.00f},  // idleColor
 };
 
 
