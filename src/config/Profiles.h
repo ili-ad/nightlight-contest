@@ -81,6 +81,9 @@ struct AnthuriumProfile {
   float frontRingDiffusion;
   float frontRingImpulseGain;
   uint8_t frontRingBlurPasses;
+  uint8_t frontRingIngressA;
+  uint8_t frontRingIngressB;
+  float displayWhiteOutputScale;
   float rearRingWashScale;
   float rearRingMemorySec;
   float torusBaseField;
