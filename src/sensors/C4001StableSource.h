@@ -20,6 +20,8 @@ class C4001StableSource {
   void noteNoAcceptedTarget(uint32_t nowMs);
   void updateSmoothedSignals(bool hasEffectiveTarget);
   void maybeRequestDroughtReinit(uint32_t nowMs);
+  void captureStatus(uint32_t nowMs);
+  void printStatusTriple() const;
 
   bool initialized_ = false;
   bool wireReady_ = false;
@@ -30,6 +32,20 @@ class C4001StableSource {
   uint32_t lastPollMs_ = 0;
   uint32_t lastInitAttemptMs_ = 0;
   uint32_t lastAcceptedMs_ = 0;
+  uint32_t lastRawReadMs_ = 0;
+  uint32_t lastStatusReadMs_ = 0;
+
+  int lastRawTargetNumber_ = 0;
+  float lastRawRangeM_ = 0.0f;
+  float lastRawSpeedMps_ = 0.0f;
+  uint32_t lastRawEnergy_ = 0;
+  bool lastRawAccepted_ = false;
+
+  uint8_t lastStatusWork_ = 0;
+  uint8_t lastStatusMode_ = 0;
+  uint8_t lastStatusInit_ = 0;
+  bool lastModeSetOk_ = false;
+  bool lastDetectThresOk_ = false;
 
   bool stableHasTarget_ = false;
   float stableRangeM_ = 1.2f;

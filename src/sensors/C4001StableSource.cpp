@@ -35,6 +35,10 @@ float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
   return t;
 }
 
+int16_t toCenti(float value) {
+  return (int16_t)(value * 100.0f + (value >= 0.0f ? 0.5f : -0.5f));
+}
+
 float chargeFromRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float nearness = 1.0f - normalizeRange(rangeM, profile);
   const float curved = nearness + (profile.nearnessLiftGain * nearness * (1.0f - nearness));
@@ -61,6 +65,18 @@ void C4001StableSource::begin() {
   lastPollMs_ = 0;
   lastInitAttemptMs_ = 0;
   lastAcceptedMs_ = 0;
+  lastRawReadMs_ = 0;
+  lastStatusReadMs_ = 0;
+  lastRawTargetNumber_ = 0;
+  lastRawRangeM_ = 0.0f;
+  lastRawSpeedMps_ = 0.0f;
+  lastRawEnergy_ = 0;
+  lastRawAccepted_ = false;
+  lastStatusWork_ = 0;
+  lastStatusMode_ = 0;
+  lastStatusInit_ = 0;
+  lastModeSetOk_ = false;
+  lastDetectThresOk_ = false;
   stableHasTarget_ = false;
   stableRangeM_ = 1.2f;
   stableSpeedMps_ = 0.0f;
@@ -70,19 +86,50 @@ void C4001StableSource::begin() {
   phase_ = StableTrack::MotionPhase::None;
 }
 
+void C4001StableSource::captureStatus(uint32_t nowMs) {
+#if C4001_ENABLE_FAULT_DIAGNOSTICS
+  if (!wireReady_) return;
+  sSensorStatus_t data = gC4001.getStatus();
+  lastStatusWork_ = data.workStatus;
+  lastStatusMode_ = data.workMode;
+  lastStatusInit_ = data.initStatus;
+  lastStatusReadMs_ = nowMs;
+#else
+  (void)nowMs;
+#endif
+}
+
+void C4001StableSource::printStatusTriple() const {
+#if C4001_ENABLE_FAULT_DIAGNOSTICS
+  if (lastStatusReadMs_ == 0) {
+    Serial.print(F("x/x/x"));
+    return;
+  }
+  Serial.print((int)lastStatusWork_);
+  Serial.print('/');
+  Serial.print((int)lastStatusMode_);
+  Serial.print('/');
+  Serial.print((int)lastStatusInit_);
+#endif
+}
+
 bool C4001StableSource::tryInit() {
   if (!initialized_) begin();
   if (!wireReady_) return false;
 
   lastInitAttemptMs_ = millis();
+  lastModeSetOk_ = false;
+  lastDetectThresOk_ = false;
   if (!gC4001.begin()) {
     sensorReady_ = false;
+    lastStatusReadMs_ = 0;
     return false;
   }
 
-  gC4001.setSensorMode(eSpeedMode);
-  gC4001.setDetectThres(11, 1200, 10);
+  lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
+  lastDetectThresOk_ = gC4001.setDetectThres(11, 1200, 10);
   gC4001.setFrettingDetection(eON);
+  captureStatus(millis());
   sensorReady_ = true;
   lastPollMs_ = 0;
   return true;
@@ -95,17 +142,40 @@ void C4001StableSource::service(uint32_t nowMs) {
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (gLastFaultDiagMs == 0 || (nowMs - gLastFaultDiagMs) >= kFaultDiagIntervalMs) {
     gLastFaultDiagMs = nowMs;
-    Serial.print("radar_diag ready=");
+    if (sensorReady_) captureStatus(nowMs);
+    Serial.print(F("radar_diag rdy="));
     Serial.print(sensorReady_ ? 1 : 0);
-    Serial.print(" target=");
+    Serial.print(F(" st="));
+    printStatusTriple();
+    Serial.print(F(" init="));
+    Serial.print(lastModeSetOk_ ? 1 : 0);
+    Serial.print('/');
+    Serial.print(lastDetectThresOk_ ? 1 : 0);
+    Serial.print(F(" raw="));
+    Serial.print(lastRawTargetNumber_);
+    Serial.print(',');
+    Serial.print(toCenti(lastRawRangeM_));
+    Serial.print(',');
+    Serial.print(toCenti(lastRawSpeedMps_));
+    Serial.print(',');
+    Serial.print(lastRawEnergy_);
+    Serial.print(F(" acc="));
+    Serial.print(lastRawAccepted_ ? 1 : 0);
+    Serial.print(F(" stable="));
     Serial.print(stableHasTarget_ ? 1 : 0);
-    Serial.print(" ever=");
+    Serial.print(',');
+    Serial.print(toCenti(stableRangeM_));
+    Serial.print(',');
+    Serial.print(toCenti(stableSpeedMps_));
+    Serial.print(F(" ever="));
     Serial.print(everHadAcceptedTarget_ ? 1 : 0);
-    Serial.print(" drought=");
+    Serial.print(F(" dr="));
     Serial.print(droughtReinitRequested_ ? 1 : 0);
-    Serial.print(" ageAcceptedMs=");
+    Serial.print(F(" ageA="));
     Serial.print(lastAcceptedMs_ == 0 ? 0 : nowMs - lastAcceptedMs_);
-    Serial.print(" ageInitMs=");
+    Serial.print(F(" ageRaw="));
+    Serial.print(lastRawReadMs_ == 0 ? 0 : nowMs - lastRawReadMs_);
+    Serial.print(F(" ageInit="));
     Serial.println(lastInitAttemptMs_ == 0 ? 0 : nowMs - lastInitAttemptMs_);
   }
 #endif
@@ -136,11 +206,11 @@ void C4001StableSource::service(uint32_t nowMs) {
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (logAttempt) {
     gLastInitAttemptLogMs = nowMs;
-    Serial.print("event=c4001_init_attempt reason=");
-    if (manualAttempt) Serial.print("manual");
-    else if (droughtAttempt) Serial.print("drought");
-    else Serial.print("offline");
-    Serial.print(" wasReady=");
+    Serial.print(F("event=c4001_init_attempt reason="));
+    if (manualAttempt) Serial.print(F("manual"));
+    else if (droughtAttempt) Serial.print(F("drought"));
+    else Serial.print(F("offline"));
+    Serial.print(F(" wasReady="));
     Serial.println(sensorReady_ ? 1 : 0);
     Serial.flush();
   }
@@ -151,8 +221,15 @@ void C4001StableSource::service(uint32_t nowMs) {
 
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (logAttempt) {
-    Serial.print("event=c4001_init_result ok=");
-    Serial.println(sensorReady_ ? 1 : 0);
+    Serial.print(F("event=c4001_init_result ok="));
+    Serial.print(sensorReady_ ? 1 : 0);
+    Serial.print(F(" modeOk="));
+    Serial.print(lastModeSetOk_ ? 1 : 0);
+    Serial.print(F(" thresOk="));
+    Serial.print(lastDetectThresOk_ ? 1 : 0);
+    Serial.print(F(" st="));
+    printStatusTriple();
+    Serial.println();
   }
 #endif
 
@@ -217,7 +294,13 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   const float sensedSpeed = gC4001.getTargetSpeed();
   // Energy has shown unstable / overflow-looking values in logs. Keep reading it
   // to match the bench sketch's sampling cadence, but do not use it for charge.
-  (void)gC4001.getTargetEnergy();
+  const uint32_t sensedEnergy = gC4001.getTargetEnergy();
+
+  lastRawReadMs_ = nowMs;
+  lastRawTargetNumber_ = targetNumber;
+  lastRawRangeM_ = sensedRange;
+  lastRawSpeedMps_ = sensedSpeed;
+  lastRawEnergy_ = sensedEnergy;
 
   if (targetNumber > 0 &&
       sensedRange >= profile.rangeNearM &&
@@ -227,6 +310,7 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
     rawRangeM = sensedRange;
     rawSpeedMps = sensedSpeed;
   }
+  lastRawAccepted_ = accepted;
 
   if (accepted) {
     if (!stableHasTarget_ && everHadAcceptedTarget_) {
