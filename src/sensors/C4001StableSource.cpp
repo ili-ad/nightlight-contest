@@ -64,7 +64,6 @@ void C4001StableSource::begin() {
   manualInitRequested_ = false;
   everHadAcceptedTarget_ = false;
   droughtReinitRequested_ = false;
-  configAttempted_ = false;
   recoveryStage_ = 0;
   lastRecoveryStep_ = 0;
   lastPollMs_ = 0;
@@ -161,9 +160,10 @@ bool C4001StableSource::tryInit() {
   }
 
   // Configuration is a boot/cold-init operation only. These DFRobot calls save
-  // parameters internally, so drought recovery must not repeat them.
-  if (!configAttempted_) {
-    configAttempted_ = true;
+  // parameters internally, so drought recovery must not repeat them. Keep trying
+  // on cold/offline init attempts until it actually succeeds; do not let one
+  // half-awake ACK/status pass permanently skip threshold/fretting setup.
+  if (!configured_) {
     if (lastModeSetOk_ && statusBitsHealthy()) {
       lastDetectThresOk_ = gC4001.setDetectThres(11, 1200, 10);
       if (lastDetectThresOk_) {

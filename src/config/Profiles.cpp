@@ -94,7 +94,7 @@ constexpr ClapProfile kClapProfile = {
 };
 
 constexpr OutputProfile kOutputProfile = {
-    0.18f,  // globalScale
+    0.35f,  // globalScale
     80,     // maxChannel
 };
 

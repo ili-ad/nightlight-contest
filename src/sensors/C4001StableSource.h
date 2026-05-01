@@ -34,7 +34,6 @@ class C4001StableSource {
   bool manualInitRequested_ = false;
   bool everHadAcceptedTarget_ = false;
   bool droughtReinitRequested_ = false;
-  bool configAttempted_ = false;
   uint8_t recoveryStage_ = 0;
   uint8_t lastRecoveryStep_ = 0;
   uint32_t lastPollMs_ = 0;
