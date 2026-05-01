@@ -12,7 +12,7 @@
 
 // Sparse overnight diagnostics for the hard-to-reproduce C4001 zombie state.
 // This is intentionally much lighter than full telemetry: one health line per
-// minute plus init attempt/result breadcrumbs. Set to 0 for the final silent build.
+// minute plus init/recovery breadcrumbs. Set to 0 for the final silent build.
 #ifndef C4001_ENABLE_FAULT_DIAGNOSTICS
 #define C4001_ENABLE_FAULT_DIAGNOSTICS 1
 #endif
@@ -62,6 +62,10 @@ void C4001StableSource::begin() {
   manualInitRequested_ = false;
   everHadAcceptedTarget_ = false;
   droughtReinitRequested_ = false;
+  configAttempted_ = false;
+  configApplied_ = false;
+  recoveryStage_ = 0;
+  lastRecoveryStep_ = 0;
   lastPollMs_ = 0;
   lastInitAttemptMs_ = 0;
   lastAcceptedMs_ = 0;
@@ -86,17 +90,32 @@ void C4001StableSource::begin() {
   phase_ = StableTrack::MotionPhase::None;
 }
 
-void C4001StableSource::captureStatus(uint32_t nowMs) {
-#if C4001_ENABLE_FAULT_DIAGNOSTICS
-  if (!wireReady_) return;
+bool C4001StableSource::captureStatus(uint32_t nowMs) {
+  if (!wireReady_) return false;
   sSensorStatus_t data = gC4001.getStatus();
   lastStatusWork_ = data.workStatus;
   lastStatusMode_ = data.workMode;
   lastStatusInit_ = data.initStatus;
   lastStatusReadMs_ = nowMs;
-#else
-  (void)nowMs;
-#endif
+  return statusHealthy();
+}
+
+bool C4001StableSource::statusHealthy() const {
+  return lastStatusReadMs_ != 0 &&
+         lastStatusWork_ == 1 &&
+         lastStatusMode_ == eSpeedMode &&
+         lastStatusInit_ == 1;
+}
+
+bool C4001StableSource::probeSpeedMode() {
+  lastModeSetOk_ = false;
+  if (!gC4001.begin()) {
+    lastStatusReadMs_ = 0;
+    return false;
+  }
+  lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
+  captureStatus(millis());
+  return lastModeSetOk_ && statusHealthy();
 }
 
 void C4001StableSource::printStatusTriple() const {
@@ -118,8 +137,10 @@ bool C4001StableSource::tryInit() {
   if (!wireReady_) return false;
 
   lastInitAttemptMs_ = millis();
+  recoveryStage_ = 0;
+  lastRecoveryStep_ = 0;
   lastModeSetOk_ = false;
-  lastDetectThresOk_ = false;
+  lastDetectThresOk_ = configApplied_;
   if (!gC4001.begin()) {
     sensorReady_ = false;
     lastStatusReadMs_ = 0;
@@ -127,12 +148,72 @@ bool C4001StableSource::tryInit() {
   }
 
   lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
-  lastDetectThresOk_ = gC4001.setDetectThres(11, 1200, 10);
-  gC4001.setFrettingDetection(eON);
   captureStatus(millis());
-  sensorReady_ = true;
+  if (lastModeSetOk_ && lastStatusWork_ == 0) {
+    gC4001.setSensor(eStartSen);
+    captureStatus(millis());
+  }
+
+  // Configuration is a boot/cold-init operation only. These DFRobot calls save
+  // parameters internally, so drought recovery must not repeat them.
+  if (!configAttempted_) {
+    configAttempted_ = true;
+    if (lastModeSetOk_ && statusHealthy()) {
+      lastDetectThresOk_ = gC4001.setDetectThres(11, 1200, 10);
+      if (lastDetectThresOk_) {
+        gC4001.setFrettingDetection(eON);
+        configApplied_ = true;
+      }
+      captureStatus(millis());
+    } else {
+      lastDetectThresOk_ = false;
+    }
+  }
+
+  sensorReady_ = lastModeSetOk_ && statusHealthy();
   lastPollMs_ = 0;
-  return true;
+  return sensorReady_;
+}
+
+bool C4001StableSource::trySoftRecover() {
+  if (!initialized_) begin();
+  if (!wireReady_) return false;
+
+  lastInitAttemptMs_ = millis();
+  lastModeSetOk_ = false;
+  lastDetectThresOk_ = configApplied_;
+  lastRecoveryStep_ = recoveryStage_ + 1;
+
+  if (!gC4001.begin()) {
+    sensorReady_ = false;
+    lastStatusReadMs_ = 0;
+    return false;
+  }
+
+  // Recovery path. Do not call setDetectThres(), setFrettingDetection(),
+  // eSaveParams, or eRecoverSen here. Escalate one rung per continuing drought.
+  if (recoveryStage_ == 0) {
+    gC4001.setSensor(eStopSen);
+    delay(250);
+    gC4001.setSensor(eStartSen);
+    delay(750);
+  } else if (recoveryStage_ == 1) {
+    gC4001.setSensor(eResetSen);
+    delay(750);
+    if (gC4001.begin()) {
+      gC4001.setSensor(eStartSen);
+      delay(500);
+    }
+  } else {
+    (void)gC4001.setSensorMode(eExitMode);
+    delay(1000);
+  }
+
+  if (recoveryStage_ < 2) ++recoveryStage_;
+
+  sensorReady_ = probeSpeedMode();
+  lastPollMs_ = 0;
+  return sensorReady_;
 }
 
 void C4001StableSource::service(uint32_t nowMs) {
@@ -151,6 +232,8 @@ void C4001StableSource::service(uint32_t nowMs) {
     Serial.print(lastModeSetOk_ ? 1 : 0);
     Serial.print('/');
     Serial.print(lastDetectThresOk_ ? 1 : 0);
+    Serial.print(F(" rec="));
+    Serial.print(lastRecoveryStep_);
     Serial.print(F(" raw="));
     Serial.print(lastRawTargetNumber_);
     Serial.print(',');
@@ -217,12 +300,19 @@ void C4001StableSource::service(uint32_t nowMs) {
 #endif
 
   const bool wasReady = sensorReady_;
-  sensorReady_ = tryInit();
+  sensorReady_ = droughtAttempt ? trySoftRecover() : tryInit();
 
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (logAttempt) {
-    Serial.print(F("event=c4001_init_result ok="));
-    Serial.print(sensorReady_ ? 1 : 0);
+    if (droughtAttempt) {
+      Serial.print(F("event=c4001_recover_result ok="));
+      Serial.print(sensorReady_ ? 1 : 0);
+      Serial.print(F(" step="));
+      Serial.print(lastRecoveryStep_);
+    } else {
+      Serial.print(F("event=c4001_init_result ok="));
+      Serial.print(sensorReady_ ? 1 : 0);
+    }
     Serial.print(F(" modeOk="));
     Serial.print(lastModeSetOk_ ? 1 : 0);
     Serial.print(F(" thresOk="));
@@ -322,6 +412,8 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
     stableHasTarget_ = true;
     everHadAcceptedTarget_ = true;
     droughtReinitRequested_ = false;
+    recoveryStage_ = 0;
+    lastRecoveryStep_ = 0;
     lastAcceptedMs_ = nowMs;
     stableRangeM_ = rawRangeM;
     stableSpeedMps_ = smooth(stableSpeedMps_, rawSpeedMps, profile.speedAlpha);

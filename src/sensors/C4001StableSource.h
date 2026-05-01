@@ -20,7 +20,10 @@ class C4001StableSource {
   void noteNoAcceptedTarget(uint32_t nowMs);
   void updateSmoothedSignals(bool hasEffectiveTarget);
   void maybeRequestDroughtReinit(uint32_t nowMs);
-  void captureStatus(uint32_t nowMs);
+  bool captureStatus(uint32_t nowMs);
+  bool statusHealthy() const;
+  bool probeSpeedMode();
+  bool trySoftRecover();
   void printStatusTriple() const;
 
   bool initialized_ = false;
@@ -29,6 +32,10 @@ class C4001StableSource {
   bool manualInitRequested_ = false;
   bool everHadAcceptedTarget_ = false;
   bool droughtReinitRequested_ = false;
+  bool configAttempted_ = false;
+  bool configApplied_ = false;
+  uint8_t recoveryStage_ = 0;
+  uint8_t lastRecoveryStep_ = 0;
   uint32_t lastPollMs_ = 0;
   uint32_t lastInitAttemptMs_ = 0;
   uint32_t lastAcceptedMs_ = 0;
