@@ -5,7 +5,7 @@
 #include <DFRobot_C4001.h>
 
 // -----------------------------------------------------------------------------
-// Anthurium Lite Smoke v4.8
+// Anthurium Lite Smoke v4.9
 //
 // Bench sketch. Standalone. No app/scene framework required.
 //
@@ -87,7 +87,7 @@ constexpr float kRightJPhaseOffset = 0.035f;
 // ---------------------------------------------------------------------------
 // Timing / output
 // ---------------------------------------------------------------------------
-constexpr uint8_t kGlobalBrightness = 48;
+constexpr uint8_t kGlobalBrightness = 60;
 constexpr uint32_t kFrameMs = 16;       // ~60 fps target
 constexpr uint32_t kSensorPollMs = 60;  // C4001 path is slower than render path
 constexpr uint32_t kPrintMs = 250;
@@ -157,8 +157,8 @@ constexpr float kFrontInjectionGain = 0.35f;
 constexpr float kFrontInstantGain = 0.030f;
 constexpr float kFrontBaseFieldLevel = 0.060f;
 constexpr float kFrontIngressSpreadPixels = 13.5f;  // broad enough to close the loop without adding fake inlets
-constexpr float kFrontOutputScale = 1.48f;
-constexpr float kFrontWhiteGain = 0.045f;
+constexpr float kFrontOutputScale = 1.60f;
+constexpr float kFrontWhiteGain = 0.040f;
 
 // Rear ring: longer-memory and wider for wall wash. It is intentionally lazier
 // than the front, but still under budget.
@@ -182,25 +182,45 @@ constexpr bool kRearMirrorIngress = true;
 // histories from becoming chalky white.
 constexpr float kRingMaxPixelAddPerFrame = 0.010f;
 constexpr float kRingColorFlushPerAdd = 1.65f;
-constexpr float kFrontMoodWashGain = 0.036f;
+constexpr float kFrontMoodWashGain = 0.038f;
 constexpr float kRearMoodWashGain = 0.034f;
 
 // Front-ring palette rescue. The reservoir is now behaving, but the log/photo
-// showed a long-lived pale green-yellow band that reads like a bug lamp. This
-// transform is render-only: it does not alter the stored reservoir, the
-// spadices, or blue/red/cyan motion colors. It catches only the yellow-green
-// RGB output band and bends it into a warm domestic white / amber-white.
+// showed a long-lived pale green-yellow band that reads like a bug lamp. v4.9
+// narrows this band and explicitly protects retreat/cyan moments. This remains
+// render-only: it does not alter the stored reservoir or the spadices.
 constexpr bool kEnableFrontBugLampRescue = true;
 constexpr float kBugLampRescueStrength = 0.90f;
-constexpr float kBugLampMinRedOverGreen = 0.45f;
-constexpr float kBugLampMaxRedOverGreen = 1.05f;
-constexpr float kBugLampMaxBlueOverGreen = 0.72f;
+constexpr float kBugLampMinRedOverGreen = 0.72f;
+constexpr float kBugLampMaxRedOverGreen = 1.12f;
+constexpr float kBugLampMaxBlueOverGreen = 0.58f;
 constexpr float kBugLampMinVisible = 0.010f;
-constexpr float kWarmWhiteRescueGain = 1.12f;
+constexpr float kWarmWhiteRescueGain = 1.16f;
 constexpr float kWarmWhiteRescueR = 1.00f;
-constexpr float kWarmWhiteRescueG = 0.52f;
-constexpr float kWarmWhiteRescueB = 0.14f;
+constexpr float kWarmWhiteRescueG = 0.46f;
+constexpr float kWarmWhiteRescueB = 0.12f;
 constexpr float kWarmWhiteRescueW = 0.72f;
+
+// Front-ring render-only color grade. This is deliberately not a reservoir
+// change: it raises chroma, especially red, without filling the W channel.
+constexpr float kFrontRedChannelGain = 1.34f;
+constexpr float kFrontGreenChannelGain = 1.04f;
+constexpr float kFrontBlueChannelGain = 1.14f;
+constexpr float kFrontWhiteChannelGain = 0.90f;
+
+// The yellow rescue worked, but the logs show the front ring often stayed in
+// green buckets even while the scene hue visited the retreat/cyan side. Add a
+// small render-only cool lift when hue/motion are genuinely cool, before the
+// bug-lamp rescue runs. This restores cyan/teal without touching the spadices.
+constexpr bool kEnableFrontCoolLift = true;
+constexpr float kFrontCoolHueStart = 0.36f;
+constexpr float kFrontCoolHueFull = 0.48f;
+constexpr float kFrontCoolMotionStart = 0.18f;
+constexpr float kFrontCoolLiftStrength = 0.74f;
+constexpr float kFrontCoolGreenGain = 0.34f;
+constexpr float kFrontCoolBlueGain = 1.10f;
+constexpr float kFrontCoolRedDampen = 0.16f;
+constexpr float kFrontCoolMinLevel = 0.018f;
 
 // Ring-wide travelling shimmer remains disabled. It produced the radar / choo-choo
 // band. Keep the rings as reservoirs for this pass.
@@ -219,8 +239,8 @@ constexpr float kArrivalPulseWidth = 0.12f;
 
 // Ingress anchors on a 44-pixel logical ring. These are the v3 anchors adapted
 // from 45 -> 44: one near the start, one across the ring.
-constexpr float kLeftIngressAnchor = 0.0f;  // v4.7: 2 px clockwise trim from v4.6
-constexpr float kRightIngressAnchor = 22.0f; // opposite anchor, same trim
+constexpr float kLeftIngressAnchor = 43.5f;  // v4.9: 2 px counterclockwise trim from v4.8
+constexpr float kRightIngressAnchor = 21.5f; // opposite anchor, same trim
 
 // In v4.2 the ring ingress is pinned back to fixed v3-style anchors to restore
 // reservoir elegance before revisiting any Brownian behavior.
@@ -583,6 +603,37 @@ ColorF currentSceneColor(float brightnessScale, bool rearSoftened) {
   return hsvColor(hue, sat, rgb * brightnessScale, white * brightnessScale);
 }
 
+ColorF applyFrontRingColorGrade(const ColorF& c) {
+  return makeColor(
+      clamp01(c.r * Config::kFrontRedChannelGain),
+      clamp01(c.g * Config::kFrontGreenChannelGain),
+      clamp01(c.b * Config::kFrontBlueChannelGain),
+      clamp01(c.w * Config::kFrontWhiteChannelGain));
+}
+
+ColorF liftFrontCoolColor(const ColorF& c, float& coolAmount) {
+  coolAmount = 0.0f;
+  if (!Config::kEnableFrontCoolLift) return c;
+
+  const float hueSpan = maxf(0.001f, Config::kFrontCoolHueFull - Config::kFrontCoolHueStart);
+  const float hueCool = clamp01((gScene.hue - Config::kFrontCoolHueStart) / hueSpan);
+  const float motionCool = clamp01((-gScene.motion - Config::kFrontCoolMotionStart) /
+                                   maxf(0.001f, 1.0f - Config::kFrontCoolMotionStart));
+  const float cool = clamp01(maxf(hueCool * 0.78f, motionCool));
+  if (cool <= 0.010f) return c;
+
+  const float visible = maxf(c.r, maxf(c.g, c.b));
+  const float level = maxf(Config::kFrontCoolMinLevel, visible) *
+                      Config::kFrontCoolLiftStrength * cool;
+
+  ColorF out = c;
+  out.r = clamp01(out.r * (1.0f - (Config::kFrontCoolRedDampen * cool)));
+  out.g = clamp01(out.g + (level * Config::kFrontCoolGreenGain));
+  out.b = clamp01(out.b + (level * Config::kFrontCoolBlueGain));
+  coolAmount = cool;
+  return out;
+}
+
 ColorF rescueBugLampYellow(const ColorF& c, float& rescueAmount) {
   rescueAmount = 0.0f;
   if (!Config::kEnableFrontBugLampRescue) return c;
@@ -592,6 +643,14 @@ ColorF rescueBugLampYellow(const ColorF& c, float& rescueAmount) {
   const float b = c.b;
   const float visible = maxf(r, maxf(g, b));
   if (visible < Config::kBugLampMinVisible || g <= 0.001f) return c;
+
+  // Do not warm away retreat/cyan moments. The yellow rescue is for the
+  // still/near yellow-green pocket, not the cool side of the palette.
+  if (Config::kEnableFrontCoolLift &&
+      (gScene.hue >= Config::kFrontCoolHueStart ||
+       gScene.motion <= -Config::kFrontCoolMotionStart)) {
+    return c;
+  }
 
   const float redOverGreen = r / g;
   const bool redGreenBand =
@@ -1157,6 +1216,9 @@ void renderRing(RingReservoir& reservoir, const SegmentRange& seg, bool rear) {
     ColorF out = addColor(addColor(idle, moodWash), memory);
     float rescueAmount = 0.0f;
     if (!rear) {
+      out = applyFrontRingColorGrade(out);
+      float coolAmount = 0.0f;
+      out = liftFrontCoolColor(out, coolAmount);
       out = rescueBugLampYellow(out, rescueAmount);
     }
 
@@ -1218,6 +1280,14 @@ char classifyRgbw(const Rgbw8& c) {
   // Orange/amber: red leads green, blue is weak.
   if (c.r >= 5 && c.g >= 3 && c.r > c.g && (uint16_t(c.b) * 2u + 1u) < c.r) return 'o';
 
+  // Cyan / teal: green and blue both active, red not dominant. This is useful
+  // for validating that retreat/cool information is making it back onto O1.
+  if (c.g >= 3 && c.b >= 3 && c.g >= c.r &&
+      uint16_t(c.b) * 100u >= uint16_t(c.g) * 45u &&
+      uint16_t(c.r) * 100u <= uint16_t(c.g) * 85u) {
+    return 'c';
+  }
+
   if (c.r > c.g && c.r > c.b) return 'r';
   if (c.g > c.r && c.g > c.b) return 'g';
   if (c.b > c.r && c.b > c.g) return 'b';
@@ -1244,6 +1314,7 @@ void printRingSummaryLine(const char* label, const Rgbw8* pix,
   uint8_t countOrange = 0;
   uint8_t countRed = 0;
   uint8_t countGreen = 0;
+  uint8_t countCyan = 0;
   uint8_t countBlue = 0;
   uint8_t countWhite = 0;
   uint8_t countMixed = 0;
@@ -1274,6 +1345,7 @@ void printRingSummaryLine(const char* label, const Rgbw8* pix,
     else if (bucket == 'o') ++countOrange;
     else if (bucket == 'r') ++countRed;
     else if (bucket == 'g') ++countGreen;
+    else if (bucket == 'c') ++countCyan;
     else if (bucket == 'b') ++countBlue;
     else if (bucket == 'w') ++countWhite;
     else ++countMixed;
@@ -1316,6 +1388,8 @@ void printRingSummaryLine(const char* label, const Rgbw8* pix,
   Serial.print(countRed);
   Serial.print(",g:");
   Serial.print(countGreen);
+  Serial.print(",c:");
+  Serial.print(countCyan);
   Serial.print(",b:");
   Serial.print(countBlue);
   Serial.print(",w:");
