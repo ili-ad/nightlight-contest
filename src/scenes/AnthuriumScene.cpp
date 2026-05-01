@@ -75,8 +75,8 @@ constexpr float kIdleSafetyNetFadeOutSec = 0.85f;
 // The prior threshold was below the ring's visually-black luma range. Logs show
 // all pixels can read inactive while mean luma is still around 0.008-0.010, so
 // fade the net in progressively before the computed ring reaches absolute zero.
-constexpr float kIdleSafetyNetDarkMean = 0.001f;
-constexpr float kIdleSafetyNetFullMean = 0.0002f;
+constexpr float kIdleSafetyNetDarkMean = 0.010f;
+constexpr float kIdleSafetyNetFullMean = 0.0025f;
 constexpr float kIdleSafetyNetWarmR = 0.026f;
 constexpr float kIdleSafetyNetWarmG = 0.013f;
 constexpr float kIdleSafetyNetWarmB = 0.004f;
@@ -91,6 +91,10 @@ constexpr float kJOutputScale = 1.65f;
 constexpr float kJWhiteGain = 0.12f;
 constexpr float kJVisibleRgbGain = 2.4f;
 constexpr float kJVisibleWhiteGain = 0.75f;
+constexpr float kJIdleSafetyNetWarmR = 0.018f;
+constexpr float kJIdleSafetyNetWarmG = 0.009f;
+constexpr float kJIdleSafetyNetWarmB = 0.003f;
+constexpr float kJIdleSafetyNetWarmW = 0.003f;
 constexpr bool kLeftJTipAtHighIndex = false;
 constexpr bool kRightJTipAtHighIndex = false;
 constexpr float kLeftJPhaseOffset = 0.00f;
@@ -117,6 +121,15 @@ constexpr float kRearWallColorFlushPerAdd = 1.65f;
 constexpr float kRearWallAnchorA = 43.5f;
 constexpr float kRearWallAnchorB = 21.5f;
 constexpr bool kRearWallReverseOutput = true;
+
+// Experimental rear horizon counter-color. When enabled, the lower/6-o'clock
+// rear-wall inlet uses a hue-rotated companion color while the upper/noon inlet
+// keeps the normal scene color. Set false to return to the symmetric rear wash.
+constexpr bool kRearWallEnableLowerAnchorComplement = false;
+constexpr float kRearWallComplementHueShift = 0.50f;
+constexpr float kRearWallComplementSaturationScale = 0.90f;
+constexpr float kRearWallComplementLevelScale = 0.92f;
+
 constexpr float kRearWallIdleRgbLevel = 0.0025f;
 constexpr float kRearWallIdleWhiteLevel = 0.0035f;
 
@@ -128,8 +141,8 @@ constexpr float kRearIdleSafetyNetFadeInSec = 2.3f;
 constexpr float kRearIdleSafetyNetFadeOutSec = 1.05f;
 constexpr float kRearIdleSafetyNetDarkMean = 0.010f;
 constexpr float kRearIdleSafetyNetFullMean = 0.0025f;
-constexpr float kRearIdleSafetyNetWarmR = 0.018f;
-constexpr float kRearIdleSafetyNetWarmG = 0.010f;
+constexpr float kRearIdleSafetyNetWarmR = 0.026f;
+constexpr float kRearIdleSafetyNetWarmG = 0.013f;
 constexpr float kRearIdleSafetyNetWarmB = 0.004f;
 constexpr float kRearIdleSafetyNetWarmW = 0.004f;
 constexpr float kRearWallVisibleRgbGain = 2.05f;
@@ -180,6 +193,7 @@ void AnthuriumScene::begin() {
     rearReservoirBrightness_[i] = 0.0f;
   }
   rearDriveColor_ = currentSceneColor(0.0f);
+  rearComplementDriveColor_ = currentSceneColor(0.0f);
   rearDriveWhite_ = 0.0f;
   rearIdleSafetyNetLevel_ = 0.0f;
   lastCompareLogMs_ = 0;
@@ -464,9 +478,26 @@ AnthuriumScene::ColorF AnthuriumScene::renderVirtualStamenPixel(uint16_t stamenP
 }
 
 void AnthuriumScene::renderJSpans(float dtSec) {
+  const float jIdleNet = maxf(idleSafetyNetLevel_, rearIdleSafetyNetLevel_);
+
+  auto applyJIdleNet = [&](ColorF color, uint16_t pixelIndex) {
+    if (jIdleNet <= 0.001f) return color;
+
+    const float phase = ingressConveyorPhase_ + (static_cast<float>(pixelIndex) * 0.17f);
+    const float shimmer = 0.72f + (0.18f * sinf(phase * 6.28318f)) +
+                          (0.10f * sinf((phase * 3.17f) + 0.61f));
+    const float amount = clamp01(jIdleNet * shimmer);
+    color.r = clamp01(color.r + (kJIdleSafetyNetWarmR * amount));
+    color.g = clamp01(color.g + (kJIdleSafetyNetWarmG * amount));
+    color.b = clamp01(color.b + (kJIdleSafetyNetWarmB * amount));
+    color.w = clamp01(color.w + (kJIdleSafetyNetWarmW * amount));
+    return color;
+  };
+
   for (uint16_t i = 0; i < kRightJPixels; ++i) {
-    const ColorF color = renderJPixel(i, kRightJPixels, physicalRightBrightness_,
-                                      kRightJTipAtHighIndex, kRightJPhaseOffset, dtSec);
+    ColorF color = renderJPixel(i, kRightJPixels, physicalRightBrightness_,
+                                kRightJTipAtHighIndex, kRightJPhaseOffset, dtSec);
+    color = applyJIdleNet(color, i);
     output_.setRightJPixel(i,
                            toByte(color.r * kJVisibleRgbGain),
                            toByte(color.g * kJVisibleRgbGain),
@@ -475,8 +506,9 @@ void AnthuriumScene::renderJSpans(float dtSec) {
   }
 
   for (uint16_t i = 0; i < kLeftJPixels; ++i) {
-    const ColorF color = renderJPixel(i, kLeftJPixels, physicalLeftBrightness_,
-                                      kLeftJTipAtHighIndex, kLeftJPhaseOffset, dtSec);
+    ColorF color = renderJPixel(i, kLeftJPixels, physicalLeftBrightness_,
+                                kLeftJTipAtHighIndex, kLeftJPhaseOffset, dtSec);
+    color = applyJIdleNet(color, static_cast<uint16_t>(i + kRightJPixels));
     output_.setLeftJPixel(i,
                           toByte(color.r * kJVisibleRgbGain),
                           toByte(color.g * kJVisibleRgbGain),
@@ -511,13 +543,25 @@ void AnthuriumScene::updateRearDriveColor(float dtSec) {
   // Crossfade the wall-wash drive in RGBW space. This deliberately avoids
   // immediate hue snapping; red-to-blue transitions pass through a soft violet
   // rather than flipping the whole rear wash in one frame.
-  ColorF target = currentSceneColor(clamp01(0.72f + (stableCharge_ * 0.28f)));
+  const float brightnessScale = clamp01(0.72f + (stableCharge_ * 0.28f));
+  ColorF target = currentSceneColor(brightnessScale);
+
+  float complementHue = displayHue_ + kRearWallComplementHueShift;
+  while (complementHue >= 1.0f) complementHue -= 1.0f;
+  while (complementHue < 0.0f) complementHue += 1.0f;
+  ColorF complementTarget = hsvColor(complementHue,
+                                     clamp01(displaySat_ * kRearWallComplementSaturationScale),
+                                     clamp01(displayRgbLevel_ * brightnessScale * kRearWallComplementLevelScale),
+                                     0.0f);
+
   // Store color energy, not haze. White is kept as a slow render-only lift.
   const float targetWhite = clamp01(target.w * 0.25f);
   target.w = 0.0f;
+  complementTarget.w = 0.0f;
 
   const float a = emaAlphaApprox(dtSec, kRearWallColorCrossfadeSec);
   rearDriveColor_ = lerpColor(rearDriveColor_, target, a);
+  rearComplementDriveColor_ = lerpColor(rearComplementDriveColor_, complementTarget, a);
   rearDriveWhite_ = lerp(rearDriveWhite_, targetWhite, a);
 }
 
@@ -552,9 +596,20 @@ void AnthuriumScene::updateRearRingReservoir(float dtSec) {
     for (uint16_t i = 0; i < kRearRingPixels; ++i) {
       const float distA = circularDistance(static_cast<float>(i), kRearWallAnchorA, static_cast<float>(kRearRingPixels));
       const float distB = circularDistance(static_cast<float>(i), kRearWallAnchorB, static_cast<float>(kRearRingPixels));
-      const float weight = clamp01(polynomialKernel(distA, kRearWallIngressSpreadPixels) +
-                                   polynomialKernel(distB, kRearWallIngressSpreadPixels));
+      const float weightA = polynomialKernel(distA, kRearWallIngressSpreadPixels);
+      const float weightB = polynomialKernel(distB, kRearWallIngressSpreadPixels);
+      const float weight = clamp01(weightA + weightB);
       if (weight <= 0.0f) continue;
+
+      // Anchor A is the lower/6-o'clock rear-wall inlet. With the experiment
+      // enabled, that inlet stores a complementary hue while the upper/noon
+      // inlet keeps the normal rear drive color. Charge budget stays unchanged:
+      // only the color mixture changes.
+      ColorF drive = rearDriveColor_;
+      if (kRearWallEnableLowerAnchorComplement) {
+        const float inv = weightA / weight;
+        drive = lerpColor(rearDriveColor_, rearComplementDriveColor_, inv);
+      }
 
       const float add = minf(input * weight, kRearWallMaxPixelAddPerFrame);
       const float flush = clamp01(add * kRearWallColorFlushPerAdd);
@@ -564,10 +619,10 @@ void AnthuriumScene::updateRearRingReservoir(float dtSec) {
       nextColor[i].w *= (1.0f - flush);
 
       nextCharge[i] = clamp01(nextCharge[i] + add);
-      nextColor[i].r = clamp01(nextColor[i].r + (rearDriveColor_.r * add));
-      nextColor[i].g = clamp01(nextColor[i].g + (rearDriveColor_.g * add));
-      nextColor[i].b = clamp01(nextColor[i].b + (rearDriveColor_.b * add));
-      nextColor[i].w = clamp01(nextColor[i].w + (rearDriveColor_.w * add));
+      nextColor[i].r = clamp01(nextColor[i].r + (drive.r * add));
+      nextColor[i].g = clamp01(nextColor[i].g + (drive.g * add));
+      nextColor[i].b = clamp01(nextColor[i].b + (drive.b * add));
+      nextColor[i].w = clamp01(nextColor[i].w + (drive.w * add));
     }
   }
 

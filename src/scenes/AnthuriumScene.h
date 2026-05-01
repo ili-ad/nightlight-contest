@@ -119,6 +119,7 @@ class AnthuriumScene {
   ColorF rearReservoirColor_[kRearRingPixels] = {{0.0f, 0.0f, 0.0f, 0.0f}};
   float rearReservoirBrightness_[kRearRingPixels] = {0.0f};
   ColorF rearDriveColor_ = {0.0f, 0.0f, 0.0f, 0.0f};
+  ColorF rearComplementDriveColor_ = {0.0f, 0.0f, 0.0f, 0.0f};
   float rearDriveWhite_ = 0.0f;
   float rearIdleSafetyNetLevel_ = 0.0f;
 
