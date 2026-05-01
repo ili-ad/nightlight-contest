@@ -8,6 +8,7 @@
 
 namespace {
 constexpr uint8_t kC4001I2cAddress = 0x2B;
+constexpr float kMaxAcceptedSpeedMps = 2.60f;
 DFRobot_C4001_I2C gC4001(&Wire, kC4001I2cAddress);
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
@@ -54,6 +55,7 @@ void C4001StableSource::begin() {
 bool C4001StableSource::tryInit() {
   if (!initialized_) begin();
   if (!wireReady_) return false;
+  lastInitAttemptMs_ = millis();
   if (!gC4001.begin()) return false;
   gC4001.setSensorMode(eSpeedMode);
   gC4001.setDetectThres(11, 1200, 10);
@@ -63,14 +65,22 @@ bool C4001StableSource::tryInit() {
 }
 
 void C4001StableSource::service(uint32_t nowMs) {
-  (void)nowMs;
   if (!initialized_) begin();
-  if (!manualInitRequested_) return;
+
+  bool shouldAttempt = manualInitRequested_;
+  if (!sensorReady_ && !shouldAttempt) {
+    const auto& profile = Profiles::c4001();
+    if (lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.initRetryMs) {
+      shouldAttempt = true;
+    }
+  }
+
+  if (!shouldAttempt) return;
   manualInitRequested_ = false;
   const bool wasReady = sensorReady_;
   sensorReady_ = tryInit();
   if (sensorReady_ && !wasReady) {
-    Serial.println("event=c4001_read_resume");
+    Serial.println("event=c4001_init_online");
   }
 }
 
@@ -115,7 +125,11 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
     const int targetNumber = gC4001.getTargetNumber();
     const float sensedRange = gC4001.getTargetRange();
     const float sensedSpeed = gC4001.getTargetSpeed();
-    if (targetNumber > 0 && sensedRange >= profile.rangeNearM && sensedRange <= profile.rangeFarM) {
+    (void)gC4001.getTargetEnergy();
+    if (targetNumber > 0 &&
+        sensedRange >= profile.rangeNearM &&
+        sensedRange <= profile.rangeFarM &&
+        fabsf(sensedSpeed) <= kMaxAcceptedSpeedMps) {
       accepted = true;
       rawRangeM = sensedRange;
       rawSpeedMps = sensedSpeed;
