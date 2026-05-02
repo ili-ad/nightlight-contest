@@ -8,7 +8,9 @@
 
 #if NIGHTLIGHT_ENABLE_WATCHDOG && defined(__AVR__)
 #include <avr/wdt.h>
-#if defined(WDTO_8S)
+#if defined(WDT_PERIOD_8KCLK_gc)
+#define NIGHTLIGHT_WATCHDOG_TIMEOUT WDT_PERIOD_8KCLK_gc
+#elif defined(WDTO_8S)
 #define NIGHTLIGHT_WATCHDOG_TIMEOUT WDTO_8S
 #elif defined(WDTO_4S)
 #define NIGHTLIGHT_WATCHDOG_TIMEOUT WDTO_4S
@@ -63,6 +65,7 @@ bool gWatchdogEnabled = false;
 void disableWatchdogOnBoot() {
 #if NIGHTLIGHT_WATCHDOG_AVAILABLE
   wdt_disable();
+  delay(5);
   gWatchdogEnabled = false;
 #endif
 }

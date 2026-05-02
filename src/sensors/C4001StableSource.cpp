@@ -28,8 +28,11 @@ constexpr uint32_t kInitAttemptLogIntervalMs = 60000;
 constexpr uint32_t kMaxInitRetryDelayMs = 30000;
 constexpr uint8_t kMaxInitFailureCount = 6;
 
-constexpr uint32_t kHardResetAfterBadRawMs = 900000UL;   // 15 min after sustained bad raw drought.
-constexpr uint32_t kHardResetCooldownMs = 1200000UL;      // No more than one hard reset every 20 min.
+constexpr uint32_t kHardResetAfterBadRawMs = 900000UL;
+constexpr uint32_t kHardResetCooldownMs = 1200000UL;
+constexpr uint32_t kMaintResetDueMs = 2100000UL;
+constexpr uint32_t kMaintResetForceMs = 2400000UL;
+constexpr uint32_t kMaintResetIdleMs = 5000UL;
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float span = profile.rangeFarM - profile.rangeNearM;
@@ -220,6 +223,31 @@ bool C4001StableSource::tryInit() {
   return statusHealthy_;
 }
 
+bool C4001StableSource::trySensorReset(uint32_t nowMs) {
+  lastRecoveryStep_ = 5;
+  gC4001.setSensor(eResetSen);
+  delay(250);
+  i2cOnline_ = gC4001.begin();
+  if (i2cOnline_) {
+    lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
+    captureStatus(millis());
+    if (lastModeSetOk_ && lastStatusWork_ == 0) {
+      gC4001.setSensor(eStartSen);
+      delay(150);
+      captureStatus(millis());
+    }
+  } else {
+    statusHealthy_ = false;
+    lastStatusReadMs_ = 0;
+  }
+  lastHardResetMs_ = nowMs;
+  lastInitAttemptMs_ = nowMs;
+  recoveryStage_ = 0;
+  lastPollMs_ = 0;
+  statusHealthy_ = i2cOnline_ && statusBitsHealthy();
+  return statusHealthy_;
+}
+
 bool C4001StableSource::trySoftRecover() {
   if (!initialized_) begin();
   if (!wireReady_) return false;
@@ -290,27 +318,7 @@ bool C4001StableSource::trySoftRecover() {
       (now - lastHardResetMs_) >= kHardResetCooldownMs;
 
   if (badRawDrought && resetCooledDown) {
-    lastRecoveryStep_ = 5;
-    gC4001.setSensor(eResetSen);
-    delay(250);
-    i2cOnline_ = gC4001.begin();
-    if (i2cOnline_) {
-      lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
-      captureStatus(millis());
-      if (lastModeSetOk_ && lastStatusWork_ == 0) {
-        gC4001.setSensor(eStartSen);
-        delay(150);
-        captureStatus(millis());
-      }
-    } else {
-      statusHealthy_ = false;
-      lastStatusReadMs_ = 0;
-    }
-    lastHardResetMs_ = millis();
-    recoveryStage_ = 0;
-    lastPollMs_ = 0;
-    statusHealthy_ = i2cOnline_ && statusBitsHealthy();
-    return statusHealthy_;
+    return trySensorReset(now);
   }
 
   lastRecoveryStep_ = 4;
@@ -373,6 +381,21 @@ void C4001StableSource::service(uint32_t nowMs) {
       !statusHealthy_ && everHadAcceptedTarget_ && retryElapsed;
   const bool droughtRecoverCandidate =
       statusHealthy_ && droughtReinitRequested_ && reinitCooldownElapsed;
+
+  const bool resetCooledDown = lastHardResetMs_ == 0 ||
+      (nowMs - lastHardResetMs_) >= kHardResetCooldownMs;
+  const bool maintDue = statusHealthy_ && everHadAcceptedTarget_ && resetCooledDown &&
+      lastInitAttemptMs_ != 0 && (nowMs - lastInitAttemptMs_) >= kMaintResetDueMs;
+  const bool maintIdle = lastAcceptedMs_ == 0 || (nowMs - lastAcceptedMs_) >= kMaintResetIdleMs;
+  const bool maintForced = lastInitAttemptMs_ != 0 &&
+      (nowMs - lastInitAttemptMs_) >= kMaintResetForceMs;
+  if (maintDue && (maintIdle || maintForced)) {
+#if C4001_ENABLE_FAULT_DIAGNOSTICS
+    Serial.println(F("ci mnt"));
+#endif
+    (void)trySensorReset(nowMs);
+    return;
+  }
 
   if (profile.enableC4001AutoInit) {
     if (warmRecoverCandidate || droughtRecoverCandidate) {

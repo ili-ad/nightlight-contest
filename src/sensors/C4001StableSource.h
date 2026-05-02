@@ -24,6 +24,7 @@ class C4001StableSource {
   bool statusBitsHealthy() const;
   bool probeSpeedMode();
   bool trySoftRecover();
+  bool trySensorReset(uint32_t nowMs);
   uint32_t initRetryDelayMs() const;
   void noteInitFailure();
   void printStatusTriple() const;
