@@ -56,6 +56,43 @@ float chargeFromRange(float rangeM, const Profiles::C4001Profile& profile) {
 
 }  // namespace
 
+
+void C4001StableSource::clearI2cBus() {
+  clearI2cBusInternal();
+}
+
+void C4001StableSource::clearI2cBusInternal() {
+  // Bench C4001RescueSmoke showed the bad state can leave SDA low while SCL
+  // remains high. Clock SCL and issue a STOP before restarting Wire.
+  Wire.end();
+  pinMode(A4, INPUT_PULLUP);
+  pinMode(A5, INPUT_PULLUP);
+  delay(5);
+
+  for (uint8_t i = 0; i < 24 && digitalRead(A4) == LOW; ++i) {
+    pinMode(A5, OUTPUT);
+    digitalWrite(A5, LOW);
+    delayMicroseconds(6);
+    pinMode(A5, INPUT_PULLUP);
+    delayMicroseconds(6);
+  }
+
+  pinMode(A4, OUTPUT);
+  digitalWrite(A4, LOW);
+  delayMicroseconds(6);
+  pinMode(A5, INPUT_PULLUP);
+  delayMicroseconds(6);
+  pinMode(A4, INPUT_PULLUP);
+  delayMicroseconds(6);
+
+  Wire.begin();
+#if defined(WIRE_HAS_TIMEOUT)
+  Wire.setWireTimeout(25000, true);
+#endif
+  delay(80);
+  wireReady_ = true;
+}
+
 void C4001StableSource::begin() {
   initialized_ = true;
   if (!wireReady_) {
@@ -178,6 +215,7 @@ bool C4001StableSource::tryInit() {
   if (!initialized_) begin();
   if (!wireReady_) return false;
 
+  clearI2cBusInternal();
   lastInitAttemptMs_ = millis();
   recoveryStage_ = 0;
   lastRecoveryStep_ = 0;
@@ -229,6 +267,7 @@ bool C4001StableSource::tryInit() {
 
 bool C4001StableSource::trySensorReset(uint32_t nowMs) {
   lastRecoveryStep_ = 5;
+  clearI2cBusInternal();
   gC4001.setSensor(eResetSen);
   delay(250);
   i2cOnline_ = gC4001.begin();
@@ -260,6 +299,7 @@ bool C4001StableSource::trySoftRecover() {
   if (!initialized_) begin();
   if (!wireReady_) return false;
 
+  clearI2cBusInternal();
   lastInitAttemptMs_ = millis();
   lastModeSetOk_ = false;
   lastDetectThresOk_ = configured_;

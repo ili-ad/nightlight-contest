@@ -56,7 +56,7 @@ constexpr uint16_t kSceneAckBlinkGapMs = 80;
 constexpr uint16_t kAntStepMs = 90;
 bool gWatchdogEnabled = false;
 bool gBootWasWatchdog = false;
-constexpr uint32_t kWdrRadarHoldoffMs = 120000UL;
+constexpr uint32_t kWdrRadarHoldoffMs = 15000UL;
 
 void disableWatchdogOnBoot() {
 #if NIGHTLIGHT_WATCHDOG_AVAILABLE
@@ -126,6 +126,7 @@ void App::setup() {
   nightlightScene_.begin();
   startupScene_.begin(millis());
   if (gBootWasWatchdog) {
+    stableSource_.clearI2cBus();
     stableSource_.deferAutoInit(kWdrRadarHoldoffMs);
     clapDetector_.begin();
     modeController_.setMode(Mode::Anthurium);

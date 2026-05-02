@@ -11,6 +11,7 @@ class C4001StableSource {
   void service(uint32_t nowMs);
   void requestManualInit();
   void deferAutoInit(uint32_t untilMs);
+  void clearI2cBus();
   StableTrack read(uint32_t nowMs);
 
  private:
@@ -26,6 +27,7 @@ class C4001StableSource {
   bool probeSpeedMode();
   bool trySoftRecover();
   bool trySensorReset(uint32_t nowMs);
+  void clearI2cBusInternal();
   uint32_t initRetryDelayMs() const;
   void noteInitFailure();
   void printStatusTriple() const;
