@@ -336,37 +336,24 @@ void C4001StableSource::service(uint32_t nowMs) {
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (gLastFaultDiagMs == 0 || (nowMs - gLastFaultDiagMs) >= kFaultDiagIntervalMs) {
     gLastFaultDiagMs = nowMs;
-    Serial.print(F("rd r="));
+    // Lean comma log to keep this build under Nano Every flash limits:
+    // rd ready,stage,rawN,rawCm,rawSpdCm,accepted,ageAccepted,ageInit
+    Serial.print(F("rd "));
     Serial.print(statusHealthy_ ? 1 : 0);
-    Serial.print(F(" s="));
-    printStatusTriple();
-    Serial.print(F(" i="));
-    Serial.print(lastModeSetOk_ ? 1 : 0);
-    Serial.print('/');
-    Serial.print(lastDetectThresOk_ ? 1 : 0);
-    Serial.print(F(" rc="));
+    Serial.print(',');
     Serial.print(lastRecoveryStep_);
-    Serial.print(F(" rw="));
+    Serial.print(',');
     Serial.print(lastRawTargetNumber_);
     Serial.print(',');
     Serial.print(toCenti(lastRawRangeM_));
     Serial.print(',');
     Serial.print(toCenti(lastRawSpeedMps_));
-    Serial.print(F(" a="));
+    Serial.print(',');
     Serial.print(lastRawAccepted_ ? 1 : 0);
-    Serial.print(F(" tb="));
-    Serial.print(stableHasTarget_ ? 1 : 0);
     Serial.print(',');
-    Serial.print(toCenti(stableRangeM_));
-    Serial.print(',');
-    Serial.print(toCenti(stableSpeedMps_));
-    Serial.print(F(" aa="));
     Serial.print(lastAcceptedMs_ == 0 ? 0 : nowMs - lastAcceptedMs_);
-    Serial.print(F(" ai="));
-    Serial.print(lastInitAttemptMs_ == 0 ? 0 : nowMs - lastInitAttemptMs_);
-    Serial.print(F(" if="));
-    Serial.print(initFailureCount_);
-    Serial.println();
+    Serial.print(',');
+    Serial.println(lastInitAttemptMs_ == 0 ? 0 : nowMs - lastInitAttemptMs_);
   }
 #endif
   const uint32_t retryDelayMs = initRetryDelayMs();
@@ -391,7 +378,7 @@ void C4001StableSource::service(uint32_t nowMs) {
       (nowMs - lastInitAttemptMs_) >= kMaintResetForceMs;
   if (maintDue && (maintIdle || maintForced)) {
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
-    Serial.println(F("ci mnt"));
+    Serial.println(F("mnt"));
 #endif
     (void)trySensorReset(nowMs);
     return;
@@ -419,10 +406,10 @@ void C4001StableSource::service(uint32_t nowMs) {
   if (logAttempt) {
     gLastInitAttemptLogMs = nowMs;
     Serial.print(F("ci "));
-    if (manualAttempt) Serial.print(F("man"));
-    else if (recoveryAttempt) Serial.print(F("rec"));
-    else Serial.print(F("off"));
-    Serial.print(F(" wr="));
+    if (manualAttempt) Serial.print('m');
+    else if (recoveryAttempt) Serial.print('r');
+    else Serial.print('o');
+    Serial.print(',');
     Serial.println(statusHealthy_ ? 1 : 0);
   }
 #endif
@@ -433,19 +420,19 @@ void C4001StableSource::service(uint32_t nowMs) {
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (logAttempt) {
     if (recoveryAttempt) {
-      Serial.print(F("cr ok="));
+      Serial.print(F("cr "));
       Serial.print(statusHealthy_ ? 1 : 0);
-      Serial.print(F(" stp="));
+      Serial.print(',');
       Serial.print(lastRecoveryStep_);
     } else {
-      Serial.print(F("ci ok="));
+      Serial.print(F("co "));
       Serial.print(statusHealthy_ ? 1 : 0);
     }
-    Serial.print(F(" mo="));
+    Serial.print(',');
     Serial.print(lastModeSetOk_ ? 1 : 0);
-    Serial.print(F(" th="));
+    Serial.print(',');
     Serial.print(lastDetectThresOk_ ? 1 : 0);
-    Serial.print(F(" s="));
+    Serial.print(',');
     printStatusTriple();
     Serial.println();
   }
