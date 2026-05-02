@@ -156,11 +156,6 @@ void C4001StableSource::begin() {
 
 bool C4001StableSource::captureStatus(uint32_t nowMs) {
   if (!wireReady_) return false;
-  if (clearI2cBusIfStuck(2)) {
-    statusHealthy_ = false;
-    lastStatusReadMs_ = 0;
-    return false;
-  }
   sSensorStatus_t data = gC4001.getStatus();
   lastStatusWork_ = data.workStatus;
   lastStatusMode_ = data.workMode;
@@ -419,10 +414,15 @@ void C4001StableSource::service(uint32_t nowMs) {
 
   bool shouldAttempt = manualInitRequested_;
 
+  const bool warmRecoverCandidate =
+      !statusHealthy_ && everHadAcceptedTarget_ && retryElapsed;
+  const bool droughtRecoverCandidate =
+      statusHealthy_ && droughtReinitRequested_ && reinitCooldownElapsed;
+
   if (profile.enableC4001AutoInit) {
-    if (!statusHealthy_ && retryElapsed) {
+    if (warmRecoverCandidate || droughtRecoverCandidate) {
       shouldAttempt = true;
-    } else if (droughtReinitRequested_ && reinitCooldownElapsed) {
+    } else if (!statusHealthy_ && retryElapsed) {
       shouldAttempt = true;
     }
   }
@@ -430,31 +430,31 @@ void C4001StableSource::service(uint32_t nowMs) {
   if (!shouldAttempt) return;
 
   const bool manualAttempt = manualInitRequested_;
-  const bool droughtAttempt = droughtReinitRequested_ && statusHealthy_;
+  const bool recoveryAttempt = !manualAttempt &&
+      (warmRecoverCandidate || droughtRecoverCandidate);
   manualInitRequested_ = false;
   droughtReinitRequested_ = false;
 
-  const bool logAttempt = manualAttempt || droughtAttempt ||
+  const bool logAttempt = manualAttempt || recoveryAttempt ||
       gLastInitAttemptLogMs == 0 || (nowMs - gLastInitAttemptLogMs) >= kInitAttemptLogIntervalMs;
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (logAttempt) {
     gLastInitAttemptLogMs = nowMs;
     Serial.print(F("ci "));
     if (manualAttempt) Serial.print(F("man"));
-    else if (droughtAttempt) Serial.print(F("dr"));
+    else if (recoveryAttempt) Serial.print(F("rec"));
     else Serial.print(F("off"));
     Serial.print(F(" wr="));
     Serial.println(statusHealthy_ ? 1 : 0);
-    Serial.flush();
   }
 #endif
 
   const bool wasReady = statusHealthy_;
-  statusHealthy_ = droughtAttempt ? trySoftRecover() : tryInit();
+  statusHealthy_ = recoveryAttempt ? trySoftRecover() : tryInit();
 
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (logAttempt) {
-    if (droughtAttempt) {
+    if (recoveryAttempt) {
       Serial.print(F("cr ok="));
       Serial.print(statusHealthy_ ? 1 : 0);
       Serial.print(F(" stp="));
@@ -475,7 +475,7 @@ void C4001StableSource::service(uint32_t nowMs) {
 
   if (statusHealthy_) {
     initFailureCount_ = 0;
-    if (droughtAttempt) {
+    if (recoveryAttempt) {
       #if C4001_ENABLE_SERIAL_EVENTS
       Serial.println("event=c4001_reinit_after_dropout");
       #endif
@@ -489,7 +489,7 @@ void C4001StableSource::service(uint32_t nowMs) {
       #endif
     }
   } else {
-    if (droughtAttempt) {
+    if (recoveryAttempt) {
       #if C4001_ENABLE_SERIAL_EVENTS
       Serial.println("warn=c4001_reinit_after_dropout_failed");
       #endif
@@ -529,13 +529,6 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   bool accepted = false;
   float rawRangeM = stableRangeM_;
   float rawSpeedMps = 0.0f;
-
-  if (clearI2cBusIfStuck(4)) {
-    statusHealthy_ = false;
-    noteNoAcceptedTarget(nowMs);
-    updateSmoothedSignals(stableHasTarget_);
-    return currentTrack();
-  }
 
   const int targetNumber = gC4001.getTargetNumber();
   float sensedRange = 0.0f;
