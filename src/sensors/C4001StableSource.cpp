@@ -189,6 +189,9 @@ bool C4001StableSource::trySoftRecover() {
   lastModeSetOk_ = false;
   lastDetectThresOk_ = configured_;
 
+  // Gentle drought recovery only. Every call advances at most one rung, then
+  // waits for the long cooldown in Profiles before trying the next rung. This
+  // keeps the C4001 from being hammered during ordinary speed-mode silence.
   i2cOnline_ = gC4001.begin();
   if (!i2cOnline_) {
     statusHealthy_ = false;
@@ -196,50 +199,55 @@ bool C4001StableSource::trySoftRecover() {
     return false;
   }
 
-  uint8_t stage = recoveryStage_;
+  const uint8_t stage = recoveryStage_;
 
-  // Rung 1: observe/status only. If the radar still reports healthy speed mode,
-  // leave it alone for one long cooldown; speed-mode silence can be legitimate.
   if (stage == 0) {
+    // Rung 1: observe/status only. If the radar reports healthy speed mode,
+    // leave it alone; silence by itself is not proof that the sensor is broken.
     lastRecoveryStep_ = 1;
     captureStatus(millis());
-    if (i2cOnline_ && statusBitsHealthy()) {
-      recoveryStage_ = 1;
-      statusHealthy_ = true;
-      lastPollMs_ = 0;
-      return true;
-    }
-    stage = 1;
+    statusHealthy_ = i2cOnline_ && statusBitsHealthy();
+    recoveryStage_ = 1;
+    lastPollMs_ = 0;
+    return statusHealthy_;
   }
 
-  // Recovery path. Do not call setDetectThres(), setFrettingDetection(),
-  // eSaveParams, or eRecoverSen here. Escalate one rung per continuing drought.
   if (stage == 1) {
+    // Rung 2: minimal nudge. Ask the radar to keep sensing, but do not stop,
+    // reset, save config, factory-recover, or change modes.
     lastRecoveryStep_ = 2;
-    gC4001.setSensor(eStopSen);
-    delay(250);
-    gC4001.setSensor(eResetSen);
-    delay(750);
-    i2cOnline_ = gC4001.begin();
-    if (i2cOnline_) {
-      gC4001.setSensor(eStartSen);
-      delay(500);
-    }
-    recoveryStage_ = 2;
-  } else if (stage == 2) {
-    lastRecoveryStep_ = 3;
-    (void)gC4001.setSensorMode(eExitMode);
-    delay(1000);
-    recoveryStage_ = 3;
-  } else {
-    lastRecoveryStep_ = 4;
-    // Hardware power-cycle rung is intentionally stubbed for this prototype.
-    // No GPIO is toggled here; future builds can wire a load switch/MOSFET.
+    (void)gC4001.setSensor(eStartSen);
+    delay(150);
     captureStatus(millis());
-    recoveryStage_ = 3;
+    statusHealthy_ = i2cOnline_ && statusBitsHealthy();
+    recoveryStage_ = 2;
+    lastPollMs_ = 0;
+    return statusHealthy_;
   }
 
-  statusHealthy_ = probeSpeedMode();
+  if (stage == 2) {
+    // Rung 3: repair mode only if status says the C4001 drifted out of the
+    // speed/ranging mode this scene expects. Do not churn mode when it is sane.
+    lastRecoveryStep_ = 3;
+    captureStatus(millis());
+    if (lastStatusReadMs_ != 0 && lastStatusMode_ != eSpeedMode) {
+      lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
+      delay(150);
+      captureStatus(millis());
+    }
+    statusHealthy_ = i2cOnline_ && statusBitsHealthy();
+    recoveryStage_ = 3;
+    lastPollMs_ = 0;
+    return statusHealthy_;
+  }
+
+  // No automatic hard software reset in this show build. Keep future drought
+  // attempts observational so the fallback scene remains stable instead of
+  // repeatedly stressing the I2C bus. Manual init is still available.
+  lastRecoveryStep_ = 4;
+  captureStatus(millis());
+  statusHealthy_ = i2cOnline_ && statusBitsHealthy();
+  recoveryStage_ = 3;
   lastPollMs_ = 0;
   return statusHealthy_;
 }
@@ -408,17 +416,19 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   float rawSpeedMps = 0.0f;
 
   const int targetNumber = gC4001.getTargetNumber();
-  const float sensedRange = gC4001.getTargetRange();
-  const float sensedSpeed = gC4001.getTargetSpeed();
-  // Energy has shown unstable / overflow-looking values in logs. Keep reading it
-  // to match the bench sketch's sampling cadence, but do not use it for charge.
-  const uint32_t sensedEnergy = gC4001.getTargetEnergy();
+  float sensedRange = 0.0f;
+  float sensedSpeed = 0.0f;
+
+  if (targetNumber > 0) {
+    sensedRange = gC4001.getTargetRange();
+    sensedSpeed = gC4001.getTargetSpeed();
+  }
 
   lastRawReadMs_ = nowMs;
   lastRawTargetNumber_ = targetNumber;
   lastRawRangeM_ = sensedRange;
   lastRawSpeedMps_ = sensedSpeed;
-  lastRawEnergy_ = sensedEnergy;
+  lastRawEnergy_ = 0;
 
   if (targetNumber > 0 &&
       sensedRange >= profile.rangeNearM &&

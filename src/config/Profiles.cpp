@@ -15,12 +15,12 @@ constexpr TopologyProfile kTopologyProfile = {{
 
 constexpr C4001Profile kC4001Profile = {
     0x2B,   // i2cAddress
-    33,     // pollIntervalMs
+    50,     // pollIntervalMs: 20 Hz radar polling, lighter on I2C while staying responsive.
     1800,   // holdMs: ride through short C4001 zero-return gaps.
     6500,   // fadeMs: slow visual fade instead of sudden blackout.
     2000,   // initRetryMs: cold/offline retry cadence.
     120000, // acceptedDroughtReinitMs: wait 2 min before treating speed-mode silence as drought.
-    60000,  // reinitCooldownMs: one recovery rung per minute during a real drought.
+    120000, // reinitCooldownMs: one gentle recovery rung every 2 minutes during a real drought.
     true,   // enableC4001AutoInit
 
     0.35f,  // rangeNearM
