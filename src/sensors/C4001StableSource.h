@@ -39,20 +39,17 @@ class C4001StableSource {
   uint8_t recoveryStage_ = 0;
   uint8_t lastRecoveryStep_ = 0;
   uint8_t initFailureCount_ = 0;
-  uint8_t hardResetCount_ = 0;
   uint32_t lastPollMs_ = 0;
   uint32_t lastInitAttemptMs_ = 0;
   uint32_t lastAcceptedMs_ = 0;
   uint32_t lastRawReadMs_ = 0;
   uint32_t lastStatusReadMs_ = 0;
   uint32_t invalidRawDroughtStartedMs_ = 0;
-  uint32_t lastInvalidRawMs_ = 0;
   uint32_t lastHardResetMs_ = 0;
 
   int lastRawTargetNumber_ = 0;
   float lastRawRangeM_ = 0.0f;
   float lastRawSpeedMps_ = 0.0f;
-  uint32_t lastRawEnergy_ = 0;
   bool lastRawAccepted_ = false;
 
   uint8_t lastStatusWork_ = 0;

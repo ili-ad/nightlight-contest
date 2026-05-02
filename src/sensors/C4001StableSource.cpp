@@ -72,19 +72,16 @@ void C4001StableSource::begin() {
   recoveryStage_ = 0;
   lastRecoveryStep_ = 0;
   initFailureCount_ = 0;
-  hardResetCount_ = 0;
   lastPollMs_ = 0;
   lastInitAttemptMs_ = 0;
   lastAcceptedMs_ = 0;
   lastRawReadMs_ = 0;
   lastStatusReadMs_ = 0;
   invalidRawDroughtStartedMs_ = 0;
-  lastInvalidRawMs_ = 0;
   lastHardResetMs_ = 0;
   lastRawTargetNumber_ = 0;
   lastRawRangeM_ = 0.0f;
   lastRawSpeedMps_ = 0.0f;
-  lastRawEnergy_ = 0;
   lastRawAccepted_ = false;
   lastStatusWork_ = 0;
   lastStatusMode_ = 0;
@@ -310,7 +307,6 @@ bool C4001StableSource::trySoftRecover() {
       lastStatusReadMs_ = 0;
     }
     lastHardResetMs_ = millis();
-    if (hardResetCount_ < 255) ++hardResetCount_;
     recoveryStage_ = 0;
     lastPollMs_ = 0;
     statusHealthy_ = i2cOnline_ && statusBitsHealthy();
@@ -356,22 +352,13 @@ void C4001StableSource::service(uint32_t nowMs) {
     Serial.print(toCenti(stableRangeM_));
     Serial.print(',');
     Serial.print(toCenti(stableSpeedMps_));
-    Serial.print(F(" e="));
-    Serial.print(everHadAcceptedTarget_ ? 1 : 0);
-    Serial.print(F(" d="));
-    Serial.print(droughtReinitRequested_ ? 1 : 0);
     Serial.print(F(" aa="));
     Serial.print(lastAcceptedMs_ == 0 ? 0 : nowMs - lastAcceptedMs_);
-    Serial.print(F(" ar="));
-    Serial.print(lastRawReadMs_ == 0 ? 0 : nowMs - lastRawReadMs_);
     Serial.print(F(" ai="));
     Serial.print(lastInitAttemptMs_ == 0 ? 0 : nowMs - lastInitAttemptMs_);
     Serial.print(F(" if="));
     Serial.print(initFailureCount_);
-    Serial.print(F(" nr="));
-    Serial.print(initRetryDelayMs());
-    Serial.print(F(" hr="));
-    Serial.println(hardResetCount_);
+    Serial.println();
   }
 #endif
   const uint32_t retryDelayMs = initRetryDelayMs();
@@ -511,7 +498,6 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   lastRawTargetNumber_ = targetNumber;
   lastRawRangeM_ = sensedRange;
   lastRawSpeedMps_ = sensedSpeed;
-  lastRawEnergy_ = 0;
 
   if (targetNumber > 0 &&
       sensedRange >= profile.rangeNearM &&
@@ -524,7 +510,6 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   lastRawAccepted_ = accepted;
 
   if (!accepted && targetNumber > 0 && everHadAcceptedTarget_) {
-    lastInvalidRawMs_ = nowMs;
     if (invalidRawDroughtStartedMs_ == 0) {
       invalidRawDroughtStartedMs_ = nowMs;
     }
@@ -541,8 +526,7 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
     everHadAcceptedTarget_ = true;
     droughtReinitRequested_ = false;
     invalidRawDroughtStartedMs_ = 0;
-    lastInvalidRawMs_ = 0;
-    recoveryStage_ = 0;
+      recoveryStage_ = 0;
     lastRecoveryStep_ = 0;
     lastAcceptedMs_ = nowMs;
     stableRangeM_ = rawRangeM;
