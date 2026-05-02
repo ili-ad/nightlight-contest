@@ -2,21 +2,6 @@
 
 #include <Arduino.h>
 
-#ifndef NIGHTLIGHT_ENABLE_WATCHDOG
-#define NIGHTLIGHT_ENABLE_WATCHDOG 1
-#endif
-
-#if NIGHTLIGHT_ENABLE_WATCHDOG && defined(__AVR__)
-#include <avr/wdt.h>
-#if defined(WDTO_2S)
-#define NIGHTLIGHT_WATCHDOG_AVAILABLE 1
-#endif
-#endif
-
-#ifndef NIGHTLIGHT_WATCHDOG_AVAILABLE
-#define NIGHTLIGHT_WATCHDOG_AVAILABLE 0
-#endif
-
 #include "config/Profiles.h"
 #include "render/PixelOutput.h"
 #include "topology/LayoutMap.h"
@@ -55,20 +40,6 @@ constexpr uint16_t kSceneAckBlinkOnMs = 105;
 constexpr uint16_t kSceneAckBlinkGapMs = 80;
 constexpr uint16_t kAntStepMs = 90;
 
-void enableWatchdog() {
-#if NIGHTLIGHT_WATCHDOG_AVAILABLE
-  wdt_reset();
-  wdt_enable(WDTO_2S);
-  wdt_reset();
-#endif
-}
-
-void kickWatchdog() {
-#if NIGHTLIGHT_WATCHDOG_AVAILABLE
-  wdt_reset();
-#endif
-}
-
 uint8_t triWave8(uint32_t now, uint16_t periodMs) {
   if (periodMs < 2) return 0;
   const uint16_t half = periodMs / 2;
@@ -106,11 +77,9 @@ void App::setup() {
   anthuriumScene_.begin();
   nightlightScene_.begin();
   startupScene_.begin(millis());
-  enableWatchdog();
 }
 
 void App::loop() {
-  kickWatchdog();
   const uint32_t nowMs = millis();
 
   if (phase_ == AppPhase::Startup) {
@@ -229,7 +198,6 @@ void App::loop() {
       break;
   }
 
-  kickWatchdog();
   delay(16);
 }
 

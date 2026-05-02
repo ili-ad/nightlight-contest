@@ -4,21 +4,6 @@
 #include <DFRobot_C4001.h>
 #include <Wire.h>
 
-#ifndef NIGHTLIGHT_ENABLE_WATCHDOG
-#define NIGHTLIGHT_ENABLE_WATCHDOG 1
-#endif
-
-#if NIGHTLIGHT_ENABLE_WATCHDOG && defined(__AVR__)
-#include <avr/wdt.h>
-#if defined(WDTO_2S)
-#define C4001_WATCHDOG_AVAILABLE 1
-#endif
-#endif
-
-#ifndef C4001_WATCHDOG_AVAILABLE
-#define C4001_WATCHDOG_AVAILABLE 0
-#endif
-
 #include "../config/Profiles.h"
 
 #ifndef C4001_ENABLE_SERIAL_EVENTS
@@ -48,15 +33,16 @@ constexpr uint8_t kI2cSclPin = A5;
 uint16_t gI2cClearCount = 0;
 uint8_t gLastI2cSdaHigh = 1;
 uint8_t gLastI2cSclHigh = 1;
+uint8_t gLastI2cClearReason = 0;
 
-void kickWatchdog() {
-#if C4001_WATCHDOG_AVAILABLE
-  wdt_reset();
-#endif
+void sampleI2cLineState() {
+  gLastI2cSdaHigh = digitalRead(kI2cSdaPin) == HIGH ? 1 : 0;
+  gLastI2cSclHigh = digitalRead(kI2cSclPin) == HIGH ? 1 : 0;
 }
 
-bool i2cBusLooksIdle() {
-  return digitalRead(kI2cSdaPin) == HIGH && digitalRead(kI2cSclPin) == HIGH;
+bool i2cBusLooksStuck() {
+  sampleI2cLineState();
+  return gLastI2cSdaHigh == 0 || gLastI2cSclHigh == 0;
 }
 
 void releaseI2cLine(uint8_t pin) {
@@ -68,7 +54,9 @@ void pullI2cLineLow(uint8_t pin) {
   pinMode(pin, OUTPUT);
 }
 
-void clearI2cBus() {
+bool clearI2cBusIfStuck(uint8_t reason) {
+  if (!i2cBusLooksStuck()) return false;
+
 #if defined(WIRE_HAS_END)
   Wire.end();
 #endif
@@ -77,14 +65,13 @@ void clearI2cBus() {
   delayMicroseconds(10);
 
   for (uint8_t i = 0; i < 16; ++i) {
-    if (i >= 9 && i2cBusLooksIdle()) break;
+    if (i >= 9 && !i2cBusLooksStuck()) break;
     pullI2cLineLow(kI2cSclPin);
     delayMicroseconds(7);
     releaseI2cLine(kI2cSclPin);
     delayMicroseconds(7);
   }
 
-  // STOP condition: SDA low while SCL is released high, then release SDA.
   pullI2cLineLow(kI2cSdaPin);
   delayMicroseconds(7);
   releaseI2cLine(kI2cSclPin);
@@ -92,13 +79,13 @@ void clearI2cBus() {
   releaseI2cLine(kI2cSdaPin);
   delayMicroseconds(10);
 
-  gLastI2cSdaHigh = digitalRead(kI2cSdaPin) == HIGH ? 1 : 0;
-  gLastI2cSclHigh = digitalRead(kI2cSclPin) == HIGH ? 1 : 0;
+  sampleI2cLineState();
   ++gI2cClearCount;
+  gLastI2cClearReason = reason;
 
   Wire.begin();
   delay(20);
-  kickWatchdog();
+  return true;
 }
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
@@ -125,11 +112,12 @@ float chargeFromRange(float rangeM, const Profiles::C4001Profile& profile) {
 void C4001StableSource::begin() {
   initialized_ = true;
   if (!wireReady_) {
-    clearI2cBus();
+    Wire.begin();
 #if defined(WIRE_HAS_TIMEOUT)
     Wire.setWireTimeout(25000, true);
 #endif
-    delay(40);
+    delay(60);
+    sampleI2cLineState();
     wireReady_ = true;
   }
 
@@ -168,15 +156,12 @@ void C4001StableSource::begin() {
 
 bool C4001StableSource::captureStatus(uint32_t nowMs) {
   if (!wireReady_) return false;
-  if (!i2cBusLooksIdle()) {
-    clearI2cBus();
+  if (clearI2cBusIfStuck(2)) {
     statusHealthy_ = false;
     lastStatusReadMs_ = 0;
     return false;
   }
-  kickWatchdog();
   sSensorStatus_t data = gC4001.getStatus();
-  kickWatchdog();
   lastStatusWork_ = data.workStatus;
   lastStatusMode_ = data.workMode;
   lastStatusInit_ = data.initStatus;
@@ -195,14 +180,12 @@ bool C4001StableSource::statusBitsHealthy() const {
 bool C4001StableSource::probeSpeedMode() {
   lastModeSetOk_ = false;
   i2cOnline_ = gC4001.begin();
-  kickWatchdog();
   if (!i2cOnline_) {
     statusHealthy_ = false;
     lastStatusReadMs_ = 0;
     return false;
   }
   lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
-  kickWatchdog();
   captureStatus(millis());
   statusHealthy_ = i2cOnline_ && lastModeSetOk_ && statusBitsHealthy();
   return statusHealthy_;
@@ -257,9 +240,8 @@ bool C4001StableSource::tryInit() {
   lastRecoveryStep_ = 0;
   lastModeSetOk_ = false;
   lastDetectThresOk_ = configured_;
-  clearI2cBus();
+  clearI2cBusIfStuck(1);
   i2cOnline_ = gC4001.begin();
-  kickWatchdog();
   if (!i2cOnline_) {
     statusHealthy_ = false;
     lastStatusReadMs_ = 0;
@@ -268,11 +250,9 @@ bool C4001StableSource::tryInit() {
   }
 
   lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
-  kickWatchdog();
   captureStatus(millis());
   if (lastModeSetOk_ && lastStatusWork_ == 0) {
     gC4001.setSensor(eStartSen);
-    kickWatchdog();
     captureStatus(millis());
   }
 
@@ -283,10 +263,8 @@ bool C4001StableSource::tryInit() {
   if (!configured_) {
     if (lastModeSetOk_ && statusBitsHealthy()) {
       lastDetectThresOk_ = gC4001.setDetectThres(11, 1200, 10);
-      kickWatchdog();
       if (lastDetectThresOk_) {
         gC4001.setFrettingDetection(eON);
-        kickWatchdog();
         configured_ = true;
       }
       captureStatus(millis());
@@ -313,13 +291,11 @@ bool C4001StableSource::trySoftRecover() {
   lastModeSetOk_ = false;
   lastDetectThresOk_ = configured_;
 
-  clearI2cBus();
-
   // Gentle drought recovery only. Every call advances at most one rung, then
   // waits for the long cooldown in Profiles before trying the next rung. This
   // keeps the C4001 from being hammered during ordinary speed-mode silence.
+  clearI2cBusIfStuck(3);
   i2cOnline_ = gC4001.begin();
-  kickWatchdog();
   if (!i2cOnline_) {
     statusHealthy_ = false;
     lastStatusReadMs_ = 0;
@@ -344,9 +320,7 @@ bool C4001StableSource::trySoftRecover() {
     // reset, save config, factory-recover, or change modes.
     lastRecoveryStep_ = 2;
     (void)gC4001.setSensor(eStartSen);
-    kickWatchdog();
     delay(150);
-    kickWatchdog();
     captureStatus(millis());
     statusHealthy_ = i2cOnline_ && statusBitsHealthy();
     recoveryStage_ = 2;
@@ -361,9 +335,7 @@ bool C4001StableSource::trySoftRecover() {
     captureStatus(millis());
     if (lastStatusReadMs_ != 0 && lastStatusMode_ != eSpeedMode) {
       lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
-      kickWatchdog();
       delay(150);
-      kickWatchdog();
       captureStatus(millis());
     }
     statusHealthy_ = i2cOnline_ && statusBitsHealthy();
@@ -390,6 +362,7 @@ void C4001StableSource::service(uint32_t nowMs) {
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (gLastFaultDiagMs == 0 || (nowMs - gLastFaultDiagMs) >= kFaultDiagIntervalMs) {
     gLastFaultDiagMs = nowMs;
+    sampleI2cLineState();
     Serial.print(F("rd r="));
     Serial.print(statusHealthy_ ? 1 : 0);
     Serial.print(F(" s="));
@@ -406,8 +379,6 @@ void C4001StableSource::service(uint32_t nowMs) {
     Serial.print(toCenti(lastRawRangeM_));
     Serial.print(',');
     Serial.print(toCenti(lastRawSpeedMps_));
-    Serial.print(',');
-    Serial.print(lastRawEnergy_);
     Serial.print(F(" a="));
     Serial.print(lastRawAccepted_ ? 1 : 0);
     Serial.print(F(" tb="));
@@ -432,6 +403,8 @@ void C4001StableSource::service(uint32_t nowMs) {
     Serial.print(initRetryDelayMs());
     Serial.print(F(" bc="));
     Serial.print(gI2cClearCount);
+    Serial.print(',');
+    Serial.print(gLastI2cClearReason);
     Serial.print(',');
     Serial.print(gLastI2cSdaHigh);
     Serial.print('/');
@@ -557,24 +530,20 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   float rawRangeM = stableRangeM_;
   float rawSpeedMps = 0.0f;
 
-  if (!i2cBusLooksIdle()) {
-    clearI2cBus();
+  if (clearI2cBusIfStuck(4)) {
     statusHealthy_ = false;
     noteNoAcceptedTarget(nowMs);
     updateSmoothedSignals(stableHasTarget_);
     return currentTrack();
   }
 
-  kickWatchdog();
   const int targetNumber = gC4001.getTargetNumber();
-  kickWatchdog();
   float sensedRange = 0.0f;
   float sensedSpeed = 0.0f;
 
   if (targetNumber > 0) {
     sensedRange = gC4001.getTargetRange();
     sensedSpeed = gC4001.getTargetSpeed();
-    kickWatchdog();
   }
 
   lastRawReadMs_ = nowMs;
