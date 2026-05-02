@@ -25,6 +25,8 @@ uint32_t gLastFaultDiagMs = 0;
 uint32_t gLastInitAttemptLogMs = 0;
 constexpr uint32_t kFaultDiagIntervalMs = 60000;
 constexpr uint32_t kInitAttemptLogIntervalMs = 60000;
+constexpr uint32_t kMaxInitRetryDelayMs = 30000;
+constexpr uint8_t kMaxInitFailureCount = 6;
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float span = profile.rangeFarM - profile.rangeNearM;
@@ -66,6 +68,7 @@ void C4001StableSource::begin() {
   droughtReinitRequested_ = false;
   recoveryStage_ = 0;
   lastRecoveryStep_ = 0;
+  initFailureCount_ = 0;
   lastPollMs_ = 0;
   lastInitAttemptMs_ = 0;
   lastAcceptedMs_ = 0;
@@ -122,6 +125,32 @@ bool C4001StableSource::probeSpeedMode() {
   return statusHealthy_;
 }
 
+uint32_t C4001StableSource::initRetryDelayMs() const {
+  const auto& profile = Profiles::c4001();
+  uint32_t delayMs = profile.initRetryMs;
+
+  // Capped exponential backoff for cold/offline init only. The first retry
+  // stays near the configured base delay; repeated failures rapidly settle at
+  // a 30-second ceiling instead of hammering Wire/begin() forever.
+  for (uint8_t i = 1; i < initFailureCount_; ++i) {
+    if (delayMs >= kMaxInitRetryDelayMs / 2) {
+      return kMaxInitRetryDelayMs;
+    }
+    delayMs *= 2;
+    if (delayMs > kMaxInitRetryDelayMs) {
+      return kMaxInitRetryDelayMs;
+    }
+  }
+
+  return delayMs;
+}
+
+void C4001StableSource::noteInitFailure() {
+  if (initFailureCount_ < kMaxInitFailureCount) {
+    ++initFailureCount_;
+  }
+}
+
 void C4001StableSource::printStatusTriple() const {
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (lastStatusReadMs_ == 0) {
@@ -149,6 +178,7 @@ bool C4001StableSource::tryInit() {
   if (!i2cOnline_) {
     statusHealthy_ = false;
     lastStatusReadMs_ = 0;
+    noteInitFailure();
     return false;
   }
 
@@ -177,6 +207,11 @@ bool C4001StableSource::tryInit() {
   }
 
   statusHealthy_ = i2cOnline_ && lastModeSetOk_ && statusBitsHealthy();
+  if (statusHealthy_) {
+    initFailureCount_ = 0;
+  } else {
+    noteInitFailure();
+  }
   lastPollMs_ = 0;
   return statusHealthy_;
 }
@@ -295,11 +330,16 @@ void C4001StableSource::service(uint32_t nowMs) {
     Serial.print(F(" ageRaw="));
     Serial.print(lastRawReadMs_ == 0 ? 0 : nowMs - lastRawReadMs_);
     Serial.print(F(" ageInit="));
-    Serial.println(lastInitAttemptMs_ == 0 ? 0 : nowMs - lastInitAttemptMs_);
+    Serial.print(lastInitAttemptMs_ == 0 ? 0 : nowMs - lastInitAttemptMs_);
+    Serial.print(F(" initFail="));
+    Serial.print(initFailureCount_);
+    Serial.print(F(" nextRetry="));
+    Serial.println(initRetryDelayMs());
   }
 #endif
+  const uint32_t retryDelayMs = initRetryDelayMs();
   const bool retryElapsed =
-      lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.initRetryMs;
+      lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= retryDelayMs;
   const bool reinitCooldownElapsed =
       lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.reinitCooldownMs;
 
@@ -360,6 +400,7 @@ void C4001StableSource::service(uint32_t nowMs) {
 #endif
 
   if (statusHealthy_) {
+    initFailureCount_ = 0;
     if (droughtAttempt) {
       #if C4001_ENABLE_SERIAL_EVENTS
       Serial.println("event=c4001_reinit_after_dropout");

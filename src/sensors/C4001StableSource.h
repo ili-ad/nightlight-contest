@@ -24,6 +24,8 @@ class C4001StableSource {
   bool statusBitsHealthy() const;
   bool probeSpeedMode();
   bool trySoftRecover();
+  uint32_t initRetryDelayMs() const;
+  void noteInitFailure();
   void printStatusTriple() const;
 
   bool initialized_ = false;
@@ -36,6 +38,7 @@ class C4001StableSource {
   bool droughtReinitRequested_ = false;
   uint8_t recoveryStage_ = 0;
   uint8_t lastRecoveryStep_ = 0;
+  uint8_t initFailureCount_ = 0;
   uint32_t lastPollMs_ = 0;
   uint32_t lastInitAttemptMs_ = 0;
   uint32_t lastAcceptedMs_ = 0;
