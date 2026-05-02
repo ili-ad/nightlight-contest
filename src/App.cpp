@@ -2,6 +2,25 @@
 
 #include <Arduino.h>
 
+#ifndef NIGHTLIGHT_ENABLE_WATCHDOG
+#define NIGHTLIGHT_ENABLE_WATCHDOG 1
+#endif
+
+#if NIGHTLIGHT_ENABLE_WATCHDOG && defined(__AVR__)
+#include <avr/wdt.h>
+#if defined(WDTO_8S)
+#define NIGHTLIGHT_WATCHDOG_TIMEOUT WDTO_8S
+#elif defined(WDTO_4S)
+#define NIGHTLIGHT_WATCHDOG_TIMEOUT WDTO_4S
+#endif
+#endif
+
+#ifndef NIGHTLIGHT_WATCHDOG_TIMEOUT
+#define NIGHTLIGHT_WATCHDOG_AVAILABLE 0
+#else
+#define NIGHTLIGHT_WATCHDOG_AVAILABLE 1
+#endif
+
 #include "config/Profiles.h"
 #include "render/PixelOutput.h"
 #include "topology/LayoutMap.h"
@@ -39,6 +58,30 @@ constexpr uint16_t kSceneSwitchPulseMs = 340;
 constexpr uint16_t kSceneAckBlinkOnMs = 105;
 constexpr uint16_t kSceneAckBlinkGapMs = 80;
 constexpr uint16_t kAntStepMs = 90;
+bool gWatchdogEnabled = false;
+
+void disableWatchdogOnBoot() {
+#if NIGHTLIGHT_WATCHDOG_AVAILABLE
+  wdt_disable();
+  gWatchdogEnabled = false;
+#endif
+}
+
+void maybeEnableWatchdog() {
+#if NIGHTLIGHT_WATCHDOG_AVAILABLE
+  if (!gWatchdogEnabled) {
+    wdt_reset();
+    wdt_enable(NIGHTLIGHT_WATCHDOG_TIMEOUT);
+    gWatchdogEnabled = true;
+  }
+#endif
+}
+
+void kickWatchdog() {
+#if NIGHTLIGHT_WATCHDOG_AVAILABLE
+  if (gWatchdogEnabled) wdt_reset();
+#endif
+}
 
 uint8_t triWave8(uint32_t now, uint16_t periodMs) {
   if (periodMs < 2) return 0;
@@ -65,6 +108,7 @@ App::App(LayoutMap& layoutMap, PixelOutput& pixelOutput)
       startupScene_(pixelOutput) {}
 
 void App::setup() {
+  disableWatchdogOnBoot();
   (void)layoutMap_;
   #if NIGHTLIGHT_SERIAL_ENABLED
   Serial.begin(115200);
@@ -80,6 +124,7 @@ void App::setup() {
 }
 
 void App::loop() {
+  kickWatchdog();
   const uint32_t nowMs = millis();
 
   if (phase_ == AppPhase::Startup) {
@@ -166,6 +211,7 @@ void App::loop() {
   if (sceneAckActive(nowMs)) {
     renderSceneAck(nowMs);
     stableSource_.service(nowMs);
+    kickWatchdog();
     delay(16);
     return;
   }
@@ -173,6 +219,7 @@ void App::loop() {
   if (clapDetector_.isWaitingForSecondClap()) {
     renderClapWaitOverlay(nowMs);
     stableSource_.service(nowMs);
+    kickWatchdog();
     delay(16);
     return;
   }
@@ -188,9 +235,11 @@ void App::loop() {
       break;
     case Mode::Anthurium: {
       const StableTrack track = stableSource_.read(nowMs);
+      if (track.online) maybeEnableWatchdog();
       maybePrintAnthuriumTelemetry(track, nowMs);
       anthuriumScene_.render(track, nowMs);
       stableSource_.service(nowMs);
+      kickWatchdog();
       break;
     }
     default:
@@ -198,6 +247,7 @@ void App::loop() {
       break;
   }
 
+  kickWatchdog();
   delay(16);
 }
 

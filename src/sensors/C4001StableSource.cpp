@@ -28,65 +28,8 @@ constexpr uint32_t kInitAttemptLogIntervalMs = 60000;
 constexpr uint32_t kMaxInitRetryDelayMs = 30000;
 constexpr uint8_t kMaxInitFailureCount = 6;
 
-constexpr uint8_t kI2cSdaPin = A4;
-constexpr uint8_t kI2cSclPin = A5;
-uint16_t gI2cClearCount = 0;
-uint8_t gLastI2cSdaHigh = 1;
-uint8_t gLastI2cSclHigh = 1;
-uint8_t gLastI2cClearReason = 0;
-
-void sampleI2cLineState() {
-  gLastI2cSdaHigh = digitalRead(kI2cSdaPin) == HIGH ? 1 : 0;
-  gLastI2cSclHigh = digitalRead(kI2cSclPin) == HIGH ? 1 : 0;
-}
-
-bool i2cBusLooksStuck() {
-  sampleI2cLineState();
-  return gLastI2cSdaHigh == 0 || gLastI2cSclHigh == 0;
-}
-
-void releaseI2cLine(uint8_t pin) {
-  pinMode(pin, INPUT_PULLUP);
-}
-
-void pullI2cLineLow(uint8_t pin) {
-  digitalWrite(pin, LOW);
-  pinMode(pin, OUTPUT);
-}
-
-bool clearI2cBusIfStuck(uint8_t reason) {
-  if (!i2cBusLooksStuck()) return false;
-
-#if defined(WIRE_HAS_END)
-  Wire.end();
-#endif
-  releaseI2cLine(kI2cSdaPin);
-  releaseI2cLine(kI2cSclPin);
-  delayMicroseconds(10);
-
-  for (uint8_t i = 0; i < 16; ++i) {
-    if (i >= 9 && !i2cBusLooksStuck()) break;
-    pullI2cLineLow(kI2cSclPin);
-    delayMicroseconds(7);
-    releaseI2cLine(kI2cSclPin);
-    delayMicroseconds(7);
-  }
-
-  pullI2cLineLow(kI2cSdaPin);
-  delayMicroseconds(7);
-  releaseI2cLine(kI2cSclPin);
-  delayMicroseconds(7);
-  releaseI2cLine(kI2cSdaPin);
-  delayMicroseconds(10);
-
-  sampleI2cLineState();
-  ++gI2cClearCount;
-  gLastI2cClearReason = reason;
-
-  Wire.begin();
-  delay(20);
-  return true;
-}
+constexpr uint32_t kHardResetAfterBadRawMs = 900000UL;   // 15 min after sustained bad raw drought.
+constexpr uint32_t kHardResetCooldownMs = 1200000UL;      // No more than one hard reset every 20 min.
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float span = profile.rangeFarM - profile.rangeNearM;
@@ -117,7 +60,6 @@ void C4001StableSource::begin() {
     Wire.setWireTimeout(25000, true);
 #endif
     delay(60);
-    sampleI2cLineState();
     wireReady_ = true;
   }
 
@@ -130,11 +72,15 @@ void C4001StableSource::begin() {
   recoveryStage_ = 0;
   lastRecoveryStep_ = 0;
   initFailureCount_ = 0;
+  hardResetCount_ = 0;
   lastPollMs_ = 0;
   lastInitAttemptMs_ = 0;
   lastAcceptedMs_ = 0;
   lastRawReadMs_ = 0;
   lastStatusReadMs_ = 0;
+  invalidRawDroughtStartedMs_ = 0;
+  lastInvalidRawMs_ = 0;
+  lastHardResetMs_ = 0;
   lastRawTargetNumber_ = 0;
   lastRawRangeM_ = 0.0f;
   lastRawSpeedMps_ = 0.0f;
@@ -235,7 +181,6 @@ bool C4001StableSource::tryInit() {
   lastRecoveryStep_ = 0;
   lastModeSetOk_ = false;
   lastDetectThresOk_ = configured_;
-  clearI2cBusIfStuck(1);
   i2cOnline_ = gC4001.begin();
   if (!i2cOnline_) {
     statusHealthy_ = false;
@@ -289,7 +234,6 @@ bool C4001StableSource::trySoftRecover() {
   // Gentle drought recovery only. Every call advances at most one rung, then
   // waits for the long cooldown in Profiles before trying the next rung. This
   // keeps the C4001 from being hammered during ordinary speed-mode silence.
-  clearI2cBusIfStuck(3);
   i2cOnline_ = gC4001.begin();
   if (!i2cOnline_) {
     statusHealthy_ = false;
@@ -339,11 +283,42 @@ bool C4001StableSource::trySoftRecover() {
     return statusHealthy_;
   }
 
-  // No automatic hard software reset in this show build. Keep future drought
-  // attempts observational so the fallback scene remains stable instead of
-  // repeatedly stressing the I2C bus. Manual init is still available.
+  // Rung 4: observe passively, unless we have evidence of a real bad-raw
+  // drought rather than merely an empty room. Only then try one rare sensor
+  // reset. eResetSen is not factory recovery; it is the library's sensor reset.
+  const uint32_t now = millis();
+  const bool badRawDrought = invalidRawDroughtStartedMs_ != 0 &&
+      (now - invalidRawDroughtStartedMs_) >= kHardResetAfterBadRawMs;
+  const bool resetCooledDown = lastHardResetMs_ == 0 ||
+      (now - lastHardResetMs_) >= kHardResetCooldownMs;
+
+  if (badRawDrought && resetCooledDown) {
+    lastRecoveryStep_ = 5;
+    gC4001.setSensor(eResetSen);
+    delay(250);
+    i2cOnline_ = gC4001.begin();
+    if (i2cOnline_) {
+      lastModeSetOk_ = gC4001.setSensorMode(eSpeedMode);
+      captureStatus(millis());
+      if (lastModeSetOk_ && lastStatusWork_ == 0) {
+        gC4001.setSensor(eStartSen);
+        delay(150);
+        captureStatus(millis());
+      }
+    } else {
+      statusHealthy_ = false;
+      lastStatusReadMs_ = 0;
+    }
+    lastHardResetMs_ = millis();
+    if (hardResetCount_ < 255) ++hardResetCount_;
+    recoveryStage_ = 0;
+    lastPollMs_ = 0;
+    statusHealthy_ = i2cOnline_ && statusBitsHealthy();
+    return statusHealthy_;
+  }
+
   lastRecoveryStep_ = 4;
-  captureStatus(millis());
+  captureStatus(now);
   statusHealthy_ = i2cOnline_ && statusBitsHealthy();
   recoveryStage_ = 3;
   lastPollMs_ = 0;
@@ -357,7 +332,6 @@ void C4001StableSource::service(uint32_t nowMs) {
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
   if (gLastFaultDiagMs == 0 || (nowMs - gLastFaultDiagMs) >= kFaultDiagIntervalMs) {
     gLastFaultDiagMs = nowMs;
-    sampleI2cLineState();
     Serial.print(F("rd r="));
     Serial.print(statusHealthy_ ? 1 : 0);
     Serial.print(F(" s="));
@@ -396,14 +370,8 @@ void C4001StableSource::service(uint32_t nowMs) {
     Serial.print(initFailureCount_);
     Serial.print(F(" nr="));
     Serial.print(initRetryDelayMs());
-    Serial.print(F(" bc="));
-    Serial.print(gI2cClearCount);
-    Serial.print(',');
-    Serial.print(gLastI2cClearReason);
-    Serial.print(',');
-    Serial.print(gLastI2cSdaHigh);
-    Serial.print('/');
-    Serial.println(gLastI2cSclHigh);
+    Serial.print(F(" hr="));
+    Serial.println(hardResetCount_);
   }
 #endif
   const uint32_t retryDelayMs = initRetryDelayMs();
@@ -555,6 +523,13 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   }
   lastRawAccepted_ = accepted;
 
+  if (!accepted && targetNumber > 0 && everHadAcceptedTarget_) {
+    lastInvalidRawMs_ = nowMs;
+    if (invalidRawDroughtStartedMs_ == 0) {
+      invalidRawDroughtStartedMs_ = nowMs;
+    }
+  }
+
   if (accepted) {
     if (!stableHasTarget_ && everHadAcceptedTarget_) {
       #if C4001_ENABLE_SERIAL_EVENTS
@@ -565,6 +540,8 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
     stableHasTarget_ = true;
     everHadAcceptedTarget_ = true;
     droughtReinitRequested_ = false;
+    invalidRawDroughtStartedMs_ = 0;
+    lastInvalidRawMs_ = 0;
     recoveryStage_ = 0;
     lastRecoveryStep_ = 0;
     lastAcceptedMs_ = nowMs;
