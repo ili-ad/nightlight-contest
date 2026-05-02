@@ -15,12 +15,12 @@ constexpr TopologyProfile kTopologyProfile = {{
 
 constexpr C4001Profile kC4001Profile = {
     0x2B,   // i2cAddress
-    50,     // pollIntervalMs: 20 Hz radar polling, lighter on I2C while staying responsive.
+    100,    // pollIntervalMs: 10 Hz, matching DFRobot's I2C example cadence and lowering Wire pressure.
     1800,   // holdMs: ride through short C4001 zero-return gaps.
     6500,   // fadeMs: slow visual fade instead of sudden blackout.
     5000,   // initRetryMs: base cold/offline retry; code backs off to a 30s ceiling.
-    120000, // acceptedDroughtReinitMs: wait 2 min before treating speed-mode silence as drought.
-    120000, // reinitCooldownMs: one gentle recovery rung every 2 minutes during a real drought.
+    60000,  // acceptedDroughtReinitMs: after 1 min of post-target silence, try one gentle coaxing rung.
+    60000,  // reinitCooldownMs: no more than one recovery rung per minute.
     true,   // enableC4001AutoInit
 
     0.35f,  // rangeNearM
