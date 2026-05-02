@@ -14,7 +14,7 @@
 // This is intentionally much lighter than full telemetry: one health line per
 // minute plus init/recovery breadcrumbs. Set to 0 for the final silent build.
 #ifndef C4001_ENABLE_FAULT_DIAGNOSTICS
-#define C4001_ENABLE_FAULT_DIAGNOSTICS 0
+#define C4001_ENABLE_FAULT_DIAGNOSTICS 1
 #endif
 
 namespace {

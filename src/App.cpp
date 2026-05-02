@@ -36,7 +36,7 @@
 // Sparse C4001 fault/recovery breadcrumbs. This enables Serial.begin() without
 // re-enabling the heavy telemetry stream. Set to 0 for the final silent build.
 #ifndef NIGHTLIGHT_ENABLE_RADAR_FAULT_LOG
-#define NIGHTLIGHT_ENABLE_RADAR_FAULT_LOG 0
+#define NIGHTLIGHT_ENABLE_RADAR_FAULT_LOG 1
 #endif
 
 #if NIGHTLIGHT_ENABLE_TELEMETRY || NIGHTLIGHT_ENABLE_SERIAL_EVENTS || NIGHTLIGHT_ENABLE_SERIAL_COMMANDS || NIGHTLIGHT_ENABLE_RADAR_FAULT_LOG
