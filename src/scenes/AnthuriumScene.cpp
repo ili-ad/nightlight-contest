@@ -13,9 +13,9 @@ constexpr float kMotionFullScaleMps = 0.35f;
 constexpr float kMotionAlpha = 0.22f;
 
 constexpr float kStillHue = 0.33f;
-constexpr float kApproachHue = 0.01f;
+constexpr float kApproachHue = 0.00f;
 constexpr float kRetreatHue = 0.60f;
-constexpr float kNearWarmBias = 0.58f;
+constexpr float kNearWarmBias = 0.68f;
 constexpr float kRetreatBias = 0.95f;
 
 constexpr float kIngressTravelSeconds = 3.0f;
@@ -28,14 +28,14 @@ constexpr float kChargeRiseAlpha = 0.24f;
 constexpr float kChargeFallAlpha = 0.14f;
 constexpr float kChargeDeadband = 0.012f;
 
-constexpr float kBaseSaturation = 0.24f;
+constexpr float kBaseSaturation = 0.28f;
 constexpr float kMotionSaturationBoost = 0.48f;
-constexpr float kNearSaturationBoost = 0.12f;
+constexpr float kNearSaturationBoost = 0.26f;
 constexpr float kBaseRgbLevel = 0.08f;
 constexpr float kMotionRgbBoost = 0.10f;
-constexpr float kNearRgbBoost = 0.14f;
+constexpr float kNearRgbBoost = 0.16f;
 constexpr float kWhiteBase = 0.015f;
-constexpr float kWhiteChargeGain = 0.14f;
+constexpr float kWhiteChargeGain = 0.12f;
 constexpr float kStamenWhiteGain = 0.12f;
 
 constexpr bool kTipAtHighIndex = true;
@@ -670,7 +670,7 @@ AnthuriumScene::ColorF AnthuriumScene::hsvColor(float hue, float sat, float val,
     default: rf = v; gf = p; bf = q; break;
   }
 
-  return makeColor(clamp01(rf), clamp01(gf), clamp01(bf), clamp01(white));
+  return makeColor(clamp01(rf * 1.18f), clamp01(gf), clamp01(bf), clamp01(white));
 }
 
 float AnthuriumScene::normalizeNearness(float rangeM) {
