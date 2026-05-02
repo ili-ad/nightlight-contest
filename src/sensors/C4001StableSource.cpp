@@ -29,11 +29,11 @@ constexpr uint32_t kMaxInitRetryDelayMs = 30000;
 constexpr uint8_t kMaxInitFailureCount = 6;
 
 constexpr uint32_t kHardResetAfterBadRawMs = 900000UL;
-constexpr uint32_t kHardResetCooldownMs = 1200000UL;
-constexpr uint32_t kMaintResetDueMs = 2100000UL;
-constexpr uint32_t kMaintResetForceMs = 2400000UL;
-constexpr uint32_t kMaintResetIdleMs = 5000UL;
-constexpr uint16_t kMaintResetPolls = 50000;
+constexpr uint32_t kHardResetCooldownMs = 300000UL;
+constexpr uint32_t kMaintResetDueMs = 300000UL;
+constexpr uint32_t kMaintResetForceMs = 360000UL;
+constexpr uint32_t kMaintResetIdleMs = 2000UL;
+constexpr uint16_t kMaintResetPolls = 5000;
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float span = profile.rangeFarM - profile.rangeNearM;
@@ -219,6 +219,7 @@ bool C4001StableSource::tryInit() {
   if (statusHealthy_) {
     initFailureCount_ = 0;
     radarPollCount_ = 0;
+    autoInitDeferredUntilMs_ = 0;
   } else {
     noteInitFailure();
   }
@@ -249,6 +250,9 @@ bool C4001StableSource::trySensorReset(uint32_t nowMs) {
   recoveryStage_ = 0;
   lastPollMs_ = 0;
   statusHealthy_ = i2cOnline_ && statusBitsHealthy();
+  if (statusHealthy_) {
+    autoInitDeferredUntilMs_ = 0;
+  }
   return statusHealthy_;
 }
 
@@ -366,6 +370,11 @@ void C4001StableSource::service(uint32_t nowMs) {
   const bool reinitCooldownElapsed =
       lastInitAttemptMs_ == 0 || (nowMs - lastInitAttemptMs_) >= profile.reinitCooldownMs;
 
+  if (!manualInitRequested_ && autoInitDeferredUntilMs_ != 0) {
+    if (nowMs < autoInitDeferredUntilMs_) return;
+    autoInitDeferredUntilMs_ = 0;
+  }
+
   bool shouldAttempt = manualInitRequested_;
 
   const bool warmRecoverCandidate =
@@ -472,9 +481,14 @@ void C4001StableSource::service(uint32_t nowMs) {
   }
 }
 
+void C4001StableSource::deferAutoInit(uint32_t untilMs) {
+  autoInitDeferredUntilMs_ = untilMs;
+}
+
 void C4001StableSource::requestManualInit() {
   if (!initialized_) begin();
   manualInitRequested_ = true;
+  autoInitDeferredUntilMs_ = 0;
 }
 
 StableTrack C4001StableSource::read(uint32_t nowMs) {

@@ -10,6 +10,7 @@ class C4001StableSource {
   bool tryInit();
   void service(uint32_t nowMs);
   void requestManualInit();
+  void deferAutoInit(uint32_t untilMs);
   StableTrack read(uint32_t nowMs);
 
  private:
@@ -47,6 +48,7 @@ class C4001StableSource {
   uint32_t lastStatusReadMs_ = 0;
   uint32_t invalidRawDroughtStartedMs_ = 0;
   uint32_t lastHardResetMs_ = 0;
+  uint32_t autoInitDeferredUntilMs_ = 0;
   uint16_t radarPollCount_ = 0;
 
   int lastRawTargetNumber_ = 0;

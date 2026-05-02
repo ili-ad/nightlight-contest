@@ -55,9 +55,16 @@ constexpr uint16_t kSceneAckBlinkOnMs = 105;
 constexpr uint16_t kSceneAckBlinkGapMs = 80;
 constexpr uint16_t kAntStepMs = 90;
 bool gWatchdogEnabled = false;
+bool gBootWasWatchdog = false;
+constexpr uint32_t kWdrRadarHoldoffMs = 120000UL;
 
 void disableWatchdogOnBoot() {
 #if NIGHTLIGHT_WATCHDOG_AVAILABLE
+#if defined(__AVR_ATmega4809__) || defined(__AVR_ATmega4808__)
+  const uint8_t flags = RSTCTRL.RSTFR;
+  RSTCTRL.RSTFR = flags;
+  gBootWasWatchdog = (flags & (1 << 3)) != 0;
+#endif
   wdt_disable();
   delay(5);
   gWatchdogEnabled = false;
@@ -118,6 +125,12 @@ void App::setup() {
   anthuriumScene_.begin();
   nightlightScene_.begin();
   startupScene_.begin(millis());
+  if (gBootWasWatchdog) {
+    stableSource_.deferAutoInit(kWdrRadarHoldoffMs);
+    clapDetector_.begin();
+    modeController_.setMode(Mode::Anthurium);
+    phase_ = AppPhase::Running;
+  }
 }
 
 void App::loop() {
@@ -136,6 +149,8 @@ void App::loop() {
     delay(16);
     return;
   }
+
+  maybeEnableWatchdog();
 
 #if NIGHTLIGHT_ENABLE_SERIAL_COMMANDS
   while (Serial.available() > 0) {
@@ -232,7 +247,6 @@ void App::loop() {
       break;
     case Mode::Anthurium: {
       const StableTrack track = stableSource_.read(nowMs);
-      if (track.online) maybeEnableWatchdog();
       maybePrintAnthuriumTelemetry(track, nowMs);
       anthuriumScene_.render(track, nowMs);
       stableSource_.service(nowMs);
