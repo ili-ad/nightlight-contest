@@ -47,6 +47,7 @@ class C4001StableSource {
   uint32_t lastStatusReadMs_ = 0;
   uint32_t invalidRawDroughtStartedMs_ = 0;
   uint32_t lastHardResetMs_ = 0;
+  uint16_t radarPollCount_ = 0;
 
   int lastRawTargetNumber_ = 0;
   float lastRawRangeM_ = 0.0f;

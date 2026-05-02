@@ -8,19 +8,13 @@
 
 #if NIGHTLIGHT_ENABLE_WATCHDOG && defined(__AVR__)
 #include <avr/wdt.h>
-#if defined(WDT_PERIOD_8KCLK_gc)
-#define NIGHTLIGHT_WATCHDOG_TIMEOUT WDT_PERIOD_8KCLK_gc
-#elif defined(WDTO_8S)
-#define NIGHTLIGHT_WATCHDOG_TIMEOUT WDTO_8S
-#elif defined(WDTO_4S)
-#define NIGHTLIGHT_WATCHDOG_TIMEOUT WDTO_4S
-#endif
-#endif
-
-#ifndef NIGHTLIGHT_WATCHDOG_TIMEOUT
-#define NIGHTLIGHT_WATCHDOG_AVAILABLE 0
-#else
+// Nano Every / ATmega4809 watchdog smoke-tested with raw PERIOD=0x0B
+// (~8s). The WDT_PERIOD_* names are enum constants on this core, so
+// preprocessor tests can miss them; use the known raw value directly.
 #define NIGHTLIGHT_WATCHDOG_AVAILABLE 1
+#define NIGHTLIGHT_WATCHDOG_TIMEOUT 0x0B
+#else
+#define NIGHTLIGHT_WATCHDOG_AVAILABLE 0
 #endif
 
 #include "config/Profiles.h"
@@ -42,7 +36,7 @@
 // Sparse C4001 fault/recovery breadcrumbs. This enables Serial.begin() without
 // re-enabling the heavy telemetry stream. Set to 0 for the final silent build.
 #ifndef NIGHTLIGHT_ENABLE_RADAR_FAULT_LOG
-#define NIGHTLIGHT_ENABLE_RADAR_FAULT_LOG 1
+#define NIGHTLIGHT_ENABLE_RADAR_FAULT_LOG 0
 #endif
 
 #if NIGHTLIGHT_ENABLE_TELEMETRY || NIGHTLIGHT_ENABLE_SERIAL_EVENTS || NIGHTLIGHT_ENABLE_SERIAL_COMMANDS || NIGHTLIGHT_ENABLE_RADAR_FAULT_LOG

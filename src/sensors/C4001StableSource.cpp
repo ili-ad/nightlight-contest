@@ -14,7 +14,7 @@
 // This is intentionally much lighter than full telemetry: one health line per
 // minute plus init/recovery breadcrumbs. Set to 0 for the final silent build.
 #ifndef C4001_ENABLE_FAULT_DIAGNOSTICS
-#define C4001_ENABLE_FAULT_DIAGNOSTICS 1
+#define C4001_ENABLE_FAULT_DIAGNOSTICS 0
 #endif
 
 namespace {
@@ -33,6 +33,7 @@ constexpr uint32_t kHardResetCooldownMs = 1200000UL;
 constexpr uint32_t kMaintResetDueMs = 2100000UL;
 constexpr uint32_t kMaintResetForceMs = 2400000UL;
 constexpr uint32_t kMaintResetIdleMs = 5000UL;
+constexpr uint16_t kMaintResetPolls = 50000;
 
 float normalizeRange(float rangeM, const Profiles::C4001Profile& profile) {
   const float span = profile.rangeFarM - profile.rangeNearM;
@@ -82,6 +83,7 @@ void C4001StableSource::begin() {
   lastStatusReadMs_ = 0;
   invalidRawDroughtStartedMs_ = 0;
   lastHardResetMs_ = 0;
+  radarPollCount_ = 0;
   lastRawTargetNumber_ = 0;
   lastRawRangeM_ = 0.0f;
   lastRawSpeedMps_ = 0.0f;
@@ -216,6 +218,7 @@ bool C4001StableSource::tryInit() {
   statusHealthy_ = i2cOnline_ && lastModeSetOk_ && statusBitsHealthy();
   if (statusHealthy_) {
     initFailureCount_ = 0;
+    radarPollCount_ = 0;
   } else {
     noteInitFailure();
   }
@@ -242,6 +245,7 @@ bool C4001StableSource::trySensorReset(uint32_t nowMs) {
   }
   lastHardResetMs_ = nowMs;
   lastInitAttemptMs_ = nowMs;
+  radarPollCount_ = 0;
   recoveryStage_ = 0;
   lastPollMs_ = 0;
   statusHealthy_ = i2cOnline_ && statusBitsHealthy();
@@ -376,9 +380,11 @@ void C4001StableSource::service(uint32_t nowMs) {
   const bool maintIdle = lastAcceptedMs_ == 0 || (nowMs - lastAcceptedMs_) >= kMaintResetIdleMs;
   const bool maintForced = lastInitAttemptMs_ != 0 &&
       (nowMs - lastInitAttemptMs_) >= kMaintResetForceMs;
-  if (maintDue && (maintIdle || maintForced)) {
+  const bool pollMaintDue = statusHealthy_ && everHadAcceptedTarget_ &&
+      resetCooledDown && radarPollCount_ >= kMaintResetPolls;
+  if (pollMaintDue || (maintDue && (maintIdle || maintForced))) {
 #if C4001_ENABLE_FAULT_DIAGNOSTICS
-    Serial.println(F("mnt"));
+    Serial.println(pollMaintDue ? F("mp") : F("mt"));
 #endif
     (void)trySensorReset(nowMs);
     return;
@@ -496,6 +502,7 @@ StableTrack C4001StableSource::read(uint32_t nowMs) {
   float rawSpeedMps = 0.0f;
 
   const int targetNumber = gC4001.getTargetNumber();
+  if (radarPollCount_ < 65535) ++radarPollCount_;
   float sensedRange = 0.0f;
   float sensedSpeed = 0.0f;
 

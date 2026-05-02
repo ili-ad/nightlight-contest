@@ -15,7 +15,7 @@ constexpr TopologyProfile kTopologyProfile = {{
 
 constexpr C4001Profile kC4001Profile = {
     0x2B,   // i2cAddress
-    50,     // pollIntervalMs: 20 Hz radar polling, lighter on I2C while staying responsive.
+    100,    // pollIntervalMs: 10 Hz radar polling, matches DFRobot example cadence.
     1800,   // holdMs: ride through short C4001 zero-return gaps.
     6500,   // fadeMs: slow visual fade instead of sudden blackout.
     5000,   // initRetryMs: base cold/offline retry; code backs off to a 30s ceiling.
@@ -94,8 +94,8 @@ constexpr ClapProfile kClapProfile = {
 };
 
 constexpr OutputProfile kOutputProfile = {
-    0.75f,  // globalScale
-    160,    // maxChannel
+    1.0f,  // globalScale
+    254,   // maxChannel
 };
 
 
